@@ -72,9 +72,15 @@ public class BranchSelectivity {
                 leftString = variableAccess.toString() + "_idx_" + (index++);
             }
             variableInConstraint.add(new Pair<String,String>(leftString,arrayRead.getType().toString()));
-        } else {
+        } else if(leftOp instanceof CtInvocationImpl) {
+            CtInvocationImpl invocationImpl = (CtInvocationImpl) leftOp;
+            leftString = leftOp.toString().replaceAll("[^a-zA-Z0-9]", "");
+            variableInConstraint.add(new Pair<String,String>(leftString,invocationImpl.getExecutable().getType().toString()));
+        } else if(leftOp instanceof CtVariableRead) {
             leftString = leftOp.toString();
             variableInConstraint.add(new Pair<String,String>(leftString,(((CtVariableRead)leftOp).getType().toString())));
+        } else {
+            leftString = leftOp.toString();
         }
 
         if(rightOp instanceof CtBinaryOperatorImpl) {
@@ -94,52 +100,62 @@ public class BranchSelectivity {
                 rightString = variableAccess.toString() + "_idx_" + (index++);
             }
             variableInConstraint.add(new Pair<String,String>(rightString,arrayRead.getType().toString()));
-        } else {
+        } else if(rightOp instanceof CtInvocationImpl) {
+            CtInvocationImpl invocationImpl = (CtInvocationImpl) rightOp;
+            rightString = rightOp.toString().replaceAll("[^a-zA-Z0-9]", "");
+            variableInConstraint.add(new Pair<String,String>(rightString,invocationImpl.getExecutable().getType().toString()));
+        } else if(rightOp instanceof CtVariableRead) {
             rightString = rightOp.toString();
             variableInConstraint.add(new Pair<String,String>(rightString,(((CtVariableRead)rightOp).getType().toString())));
+        } else {
+            rightString = rightOp.toString();
         }
 
-        switch(operator) {
+        if (rightOp instanceof  CtLiteralImpl && ((CtLiteralImpl) rightOp).getValue() == null) {
+            assertionString = "";
+        } else {
+            switch (operator) {
 
-            case OR:
-                assertionString = "(or " + leftString + " " + rightString + ")";
-                break;
+                case OR:
+                    assertionString = "(or " + leftString + " " + rightString + ")";
+                    break;
 
-            case AND:
-                assertionString = "(and " + leftString + " " + rightString + ")";
-                break;
+                case AND:
+                    assertionString = "(and " + leftString + " " + rightString + ")";
+                    break;
 
-            case EQ:
-                assertionString = "(= " + leftString + " " + rightString + ")";
-                break;
+                case EQ:
+                    assertionString = "(= " + leftString + " " + rightString + ")";
+                    break;
 
-            case NE:
-                assertionString = "(not (= " + leftString + " " + rightString + "))";
-                break;
+                case NE:
+                    assertionString = "(not (= " + leftString + " " + rightString + "))";
+                    break;
 
-            case GT:
-                assertionString = "(> " + leftString + " " + rightString + ")";
-                break;
+                case GT:
+                    assertionString = "(> " + leftString + " " + rightString + ")";
+                    break;
 
-            case LT:
-                assertionString = "(< " + leftString + " " + rightString + ")";
-                break;
+                case LT:
+                    assertionString = "(< " + leftString + " " + rightString + ")";
+                    break;
 
-            case GE:
-                assertionString = "(>= " + leftString + " " + rightString + ")";
-                break;
+                case GE:
+                    assertionString = "(>= " + leftString + " " + rightString + ")";
+                    break;
 
-            case LE:
-                assertionString = "(<= " + leftString + " " + rightString + ")";
-                break;
-            case PLUS:
-                assertionString = "(+ " + leftString + " " + rightString + ")";
-                break;
-            case MINUS:
-                assertionString = "(- " + leftString + " " + rightString + ")";
-                break;
-            default:
-                break;
+                case LE:
+                    assertionString = "(<= " + leftString + " " + rightString + ")";
+                    break;
+                case PLUS:
+                    assertionString = "(+ " + leftString + " " + rightString + ")";
+                    break;
+                case MINUS:
+                    assertionString = "(- " + leftString + " " + rightString + ")";
+                    break;
+                default:
+                    break;
+            }
         }
 
         return assertionString;
@@ -236,41 +252,44 @@ public class BranchSelectivity {
                         CtElement leftOp = binaryOperator.getLeftHandOperand();
                         CtElement rightOp = binaryOperator.getRightHandOperand();
 
-                        modelCountingConstraint += "(assert " + generateAssertion(leftOp, rightOp, binaryOperator.getKind()) + ")\n";
+                        String assertionString = generateAssertion(leftOp, rightOp, binaryOperator.getKind());
+                        if(!assertionString.equals("")) {
+                            modelCountingConstraint += "(assert " + assertionString + ")\n";
 
-                        //System.out.println(variableInConstraint);
 
-                        for (Pair<String,String> var : variableInConstraint) {
-                            System.out.println(var.getKey() + ":" + var.getValue());
-                            if(var.getValue().equals("int")) {
-                                modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                            //System.out.println(variableInConstraint);
+
+                            for (Pair<String, String> var : variableInConstraint) {
+                                System.out.println(var.getKey() + ":" + var.getValue());
+                                if (var.getValue().equals("int")) {
+                                    modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                                    modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                                } else if (var.getValue().equals("java.lang.String")) {
+                                    modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
+                                    modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
+                                }
                             }
-                            else if(var.getValue().equals("java.lang.String")) {
-                                modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
-                                modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
+
+
+                            modelCountingConstraint += "(check-sat)\n";
+                            System.out.println(modelCountingConstraint);
+
+                            variableInConstraint.clear();
+
+                            BigDecimal cons_count = modelCounter.getModelCount(modelCountingConstraint);
+                            System.out.println("Branch model count: " + cons_count);
+
+                            modelCountingDomain += "(assert true)\n";
+                            modelCountingDomain += "(check-sat)";
+                            BigDecimal dom_count = modelCounter.getModelCount(modelCountingDomain);
+                            System.out.println("Branch domain count:" + dom_count);
+
+                            double prob_true = cons_count.doubleValue() / dom_count.doubleValue();
+                            double prob_false = 1.0 - prob_true;
+
+                            if (prob_true < 0.05 || prob_false < 0.05) {
+                                System.err.println("This branch is selective");
                             }
-                        }
-
-
-                        modelCountingConstraint += "(check-sat)\n";
-                        System.out.println(modelCountingConstraint);
-
-                        variableInConstraint.clear();
-
-                        BigDecimal cons_count = modelCounter.getModelCount(modelCountingConstraint);
-                        System.out.println("Branch model count: " + cons_count);
-
-                        modelCountingDomain += "(assert true)\n";
-                        modelCountingDomain += "(check-sat)";
-                        BigDecimal dom_count = modelCounter.getModelCount(modelCountingDomain);
-                        System.out.println("Branch domain count:" + dom_count);
-
-                        double prob_true = cons_count.doubleValue()/dom_count.doubleValue();
-                        double prob_false = 1.0 - prob_true;
-
-                        if(prob_true < 0.05 || prob_false < 0.05) {
-                            System.out.println("This branch is selective");
                         }
                     }
                 }
