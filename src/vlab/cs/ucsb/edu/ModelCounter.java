@@ -20,6 +20,7 @@ public class ModelCounter {
 
   public ModelCounter(int bound, String mode) {
     this.abc = new DriverProxy();
+    this.abc.setOption(Option.USE_UNSIGNED_INTEGERS);
     //this.abc.setOption(DriverProxy.Option.DISABLE_EQUIVALENCE_CLASSES);
     this.bound = bound;
     this.total_model_count = new BigInteger("0");
@@ -34,7 +35,7 @@ public class ModelCounter {
     this.model_count_mode = mode;
   }
 
-  public BigDecimal getModelCount(String PCTranslation) {
+  public BigDecimal getModelCount(String PCTranslation, List<String> model_counting_vars, boolean multiTrackissueFlag) {
 
     long startTime = System.nanoTime();
     boolean result = abc.isSatisfiable(PCTranslation);
@@ -44,32 +45,28 @@ public class ModelCounter {
 
     BigDecimal count = new BigDecimal(0);;
     if (result) {
-      startTime = System.nanoTime();
-      if (this.model_count_mode.equals("abc.string")) {
-        HashSet<String> additional_assertions = new HashSet<String>();
-        String range_constraint = "A-Z";
-        List<String> model_counting_vars = new ArrayList<String>();
-        model_counting_vars.add("l");
-        model_counting_vars.add("h");
+//      startTime = System.nanoTime();
+//      if (this.model_count_mode.equals("abc.string")) {
+//        count = new BigDecimal(abc.countStrs((long) bound));
+//      } else if (this.model_count_mode.equals("abc.linear_integer_arithmetic")) {
+//        double MIN = (-1) * Math.pow(2, bound);
+//        double MAX = Math.pow(2, bound) - 1;
+//
+//        if (MIN >= 0) {
+//          abc.setOption(Option.USE_UNSIGNED_INTEGERS);
+//        }
+//        count = new BigDecimal(abc.countInts((long) bound));
+//      }
 
-        for (final String var_name : model_counting_vars) {
-          if (range_constraint != null) {
-            additional_assertions.add("(assert (in " + var_name
-                    + " " + range_constraint.trim() + "))");
-          }
-        }
-        count = new BigDecimal(1);
+      count = new BigDecimal(1);
+      if(multiTrackissueFlag) {
+        count = new BigDecimal(abc.countVariable(model_counting_vars.get(0), bound));
+      } else {
         for (String var_name : model_counting_vars) {
+          if(var_name.equals("java.lang.Character"))
+            continue;
           count = count.multiply(new BigDecimal(abc.countVariable(var_name, bound)));
         }
-      } else if (this.model_count_mode.equals("abc.linear_integer_arithmetic")) {
-        double MIN = (-1) * Math.pow(2, bound);
-        double MAX = Math.pow(2, bound) - 1;
-
-        if (MIN >= 0) {
-          abc.setOption(Option.USE_UNSIGNED_INTEGERS);
-        }
-        count = new BigDecimal(abc.countInts((long) bound));
       }
 
       endTime = System.nanoTime();
@@ -99,7 +96,10 @@ public class ModelCounter {
             "(assert (<= (len  h) 4))\n" +
             "(check-sat)";
 
-    BigDecimal count = mc.getModelCount(constraint);
+    List<String> model_counting_vars = new ArrayList<String>();
+    model_counting_vars.add("l");
+    model_counting_vars.add("h");
+    BigDecimal count = mc.getModelCount(constraint, model_counting_vars, false);
 
     System.out.println(count);
 
