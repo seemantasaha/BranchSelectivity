@@ -20,8 +20,8 @@ public class ModelCounter {
 
   public ModelCounter(int bound, String mode) {
     this.abc = new DriverProxy();
-    this.abc.setOption(Option.USE_UNSIGNED_INTEGERS);
-    //this.abc.setOption(DriverProxy.Option.DISABLE_EQUIVALENCE_CLASSES);
+    //this.abc.setOption(Option.USE_UNSIGNED_INTEGERS);
+    this.abc.setOption(DriverProxy.Option.DISABLE_EQUIVALENCE_CLASSES);
     this.bound = bound;
     this.total_model_count = new BigInteger("0");
     this.model_count_mode = mode;
@@ -37,11 +37,13 @@ public class ModelCounter {
 
   public BigDecimal getModelCount(String PCTranslation, List<String> model_counting_vars, boolean multiTrackissueFlag) {
 
+
+
     long startTime = System.nanoTime();
     boolean result = abc.isSatisfiable(PCTranslation);
     long endTime = System.nanoTime();
 
-    System.out.println("Constraint solving time: " + (endTime - startTime) / 1000000.0);
+    System.out.println("Constraint solving time: " + (endTime - startTime) / 1000000000.0);
 
     BigDecimal count = new BigDecimal(0);;
     if (result) {
@@ -69,9 +71,26 @@ public class ModelCounter {
         }
       }
 
+      if (model_counting_vars.size() > 1) {
+        count = new BigDecimal(abc.countInts(bound));
+      }
+      else {
+        count = new BigDecimal(1);
+        if(multiTrackissueFlag) {
+          count = new BigDecimal(abc.countVariable(model_counting_vars.get(0), bound));
+        } else {
+          for (String var_name : model_counting_vars) {
+            if(var_name.equals("java.lang.Character"))
+              continue;
+            count = count.multiply(new BigDecimal(abc.countVariable(var_name, bound)));
+          }
+        }
+      }
+
       endTime = System.nanoTime();
-      System.out.println("Model counting time: " + (endTime - startTime) / 1000000.0);
+      System.out.println("Model counting time: " + (endTime - startTime) / 1000000000.0);
     } else {
+      count = BigDecimal.ZERO;
       System.out.println("Unsatisfiable");
     }
 

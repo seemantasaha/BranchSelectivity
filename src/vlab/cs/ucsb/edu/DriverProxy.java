@@ -86,7 +86,7 @@ public class DriverProxy {
 	
 	static {
 		System.loadLibrary("abc");
-		System.out.println("ABC library loaded properly");
+		//System.out.println("ABC library loaded properly");
 	}
 
 	public DriverProxy() {
