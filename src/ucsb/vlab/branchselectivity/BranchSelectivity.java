@@ -196,6 +196,7 @@ public class BranchSelectivity {
                         string = variableAccess.toString() + "_idx_" + (index++);
                     }
                 }
+                string = reshapeString(string);
                 variableInConstraint.add(new Pair<String, String>(string, arrayRead.getType().toString()));
             }
         } else if(op instanceof CtInvocationImpl) {
@@ -246,6 +247,11 @@ public class BranchSelectivity {
                             CtInvocationImpl impl = (CtInvocationImpl) invocationImpl.getTarget();
                             string = "(= " + impl.getExecutable().getSimpleName() + " " + param + ")";
                             variableInConstraint.add(new Pair<String, String>(impl.getExecutable().getSimpleName(), invocationImpl.getExecutable().getDeclaringType().toString()));
+                        } else if (invocationImpl.getTarget() instanceof  CtBinaryOperatorImpl) {
+                            string = processOp((CtBinaryOperatorImpl)invocationImpl.getTarget());
+                            string = string.replaceAll(Pattern.quote("+"), "concat");;
+                            string = "(= " + string + " " + param + ")";
+                            variableInConstraint.add(new Pair<String, String>(string, "java.lang.String"));
                         } else {
                             String var = invocationImpl.getTarget().toString();
                             var = reshapeString(var);
@@ -315,22 +321,48 @@ public class BranchSelectivity {
 
                 else if (invocationImpl.getExecutable().getSimpleName().equals("charAt")) {
                     CharAtFlag = true;
-                    String param = processOp((CtElement) invocationImpl.getArguments().get(0));
+                    CtElement elem = (CtElement) invocationImpl.getArguments().get(0);
+                    String param = processOp(elem);
+
+                    if(param.equals("")) {
+                        if (elem instanceof CtInvocationImpl) {
+                            CtInvocationImpl invocation = (CtInvocationImpl) elem;
+                            if (invocation.getType() != null) {
+                                param = invocation.getTarget().toString();
+                                variableInConstraint.add(new Pair<String, String>(param, invocation.getType().toString()));
+                            }
+                        }else if(elem instanceof CtBinaryOperatorImpl) {
+                            CtBinaryOperatorImpl binOp = (CtBinaryOperatorImpl) elem;
+                            param = "binOp";
+                            if (binOp.getType() != null) {
+                                variableInConstraint.add(new Pair<String, String>(param, binOp.getType().toString()));
+                            }
+                            else if (binOp.getLeftHandOperand().getType()!= null) {
+                                variableInConstraint.add(new Pair<String, String>(param, binOp.getLeftHandOperand().getType().toString()));
+                            }
+                            else if (binOp.getRightHandOperand().getType()!= null) {
+                                variableInConstraint.add(new Pair<String, String>(param, binOp.getRightHandOperand().getType().toString()));
+                            }
+                        }
+                    }
+
+
+                    string = invocationImpl.getTarget().toString();
+                    string = reshapeString(string);
 
                     if(CharAtLGEQFlag) {
                         if(invocationImpl.getExecutable().getDeclaringType().toString().equals("java.lang.CharSequence")) {
-                            variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), "char" ));
+                            variableInConstraint.add(new Pair<String, String>(string, "char" ));
                         } else {
-                            variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), "char"));
+                            variableInConstraint.add(new Pair<String, String>(string, "char"));
                         }
-                        string = invocationImpl.getTarget().toString();
                     } else {
                         if (invocationImpl.getExecutable().getDeclaringType().toString().equals("java.lang.CharSequence")) {
-                            variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), "java.lang.String"));
+                            variableInConstraint.add(new Pair<String, String>(string, "java.lang.String"));
                         } else {
-                            variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), invocationImpl.getExecutable().getDeclaringType().toString()));
+                            variableInConstraint.add(new Pair<String, String>(string, invocationImpl.getExecutable().getDeclaringType().toString()));
                         }
-                        string = "(charAt " + invocationImpl.getTarget().toString() + " " + param + ")";
+                        string = "(charAt " + string + " " + param + ")";
                     }
 
 
@@ -752,6 +784,9 @@ public class BranchSelectivity {
                 //if(!ctClass.getSimpleName().equals("CharSequenceUtils"))
                 //    continue;
 
+                if(ctClass.getSimpleName().contains("InputDetailASTJustToMakeStackoverflowError"))
+                    continue;
+
                 for (CtMethod<?> method : ctClass.getMethods()) {
                     //System.out.println("Method Name: " + method.getSimpleName());
                     numberOfMethods++;
@@ -799,6 +834,16 @@ public class BranchSelectivity {
                     //numberOfBranchesWithLoop = numberOfBranches + forLoopBranchList.size() + whileLoopBranchList.size();
 
                     for (CtExpression condExpr : allConditionalExpression) {
+                        if(condExpr == null)
+                            continue;
+
+                        if(condExpr.toString().contains("//"))
+                            continue;
+
+                        //Special case: ABC issue
+                        if(condExpr.toString().equals("(a - a) != 0"))
+                            continue;
+
                         assertionEmpty = false;
                         List<String> model_counting_vars = new ArrayList<String>();
                         boolean countingModeStringFlag = false;
@@ -814,7 +859,7 @@ public class BranchSelectivity {
                             System.out.println("here i am");
                         }
 
-                        if(condExpr.toString().equals("sourceHost.equalsIgnoreCase(whitelistedOrigin) || sourceHost.endsWith(\".\" + whitelistedOrigin)")) {
+                        if(condExpr.toString().equals("k < 100")) {
                             System.out.println("here i am");
                         }
 
@@ -881,6 +926,7 @@ public class BranchSelectivity {
 
                                 System.out.println(variableInConstraint);
 
+                                int numStringVars = 0;
                                 for (Pair<String, String> var : variableInConstraint) {
                                     //System.out.println(var.getKey() + ":" + var.getValue());
                                     if (var.getValue().equals("int") || var.getValue().equals("long")) {
@@ -894,6 +940,7 @@ public class BranchSelectivity {
                                         //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
                                         //modelCounter.setBound(4);
                                     } else if (var.getValue().equals("java.lang.String")) {
+                                        numStringVars++;
                                         String range = "/[ -~]{1,16}/";
                                         //String range = "/[-0MCDXLVI]*/";
                                         String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
@@ -920,11 +967,14 @@ public class BranchSelectivity {
                                     model_counting_vars.add(var.getKey());
                                 }
 
-//                                if(countingModeStringFlag) {
-//                                    modelCounter.setModelCountMode("abc.string");
-//                                } else {
-//                                    modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-//                                }
+                                if(numStringVars > 3) {
+                                    modelCountingConstraint = "";
+                                    continue;
+                                }
+
+                                if(numStringVars == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
+                                    modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
+                                }
 
                                 modelCountingDomain += rangeConsAssertion;
                                 modelCountingConstraint += rangeConsAssertion;
