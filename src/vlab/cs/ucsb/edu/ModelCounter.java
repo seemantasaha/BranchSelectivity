@@ -7,6 +7,7 @@ import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import javafx.util.Pair;
 
 //import edu.ucsb.cs.vlab.translate.smtlib.from.abc.ABCTranslator;
 
@@ -35,7 +36,7 @@ public class ModelCounter {
     this.model_count_mode = mode;
   }
 
-  public BigDecimal getModelCount(String PCTranslation, List<String> model_counting_vars, boolean multiTrackissueFlag) {
+  public BigDecimal getModelCount(String PCTranslation, List<Pair<String,String>> model_counting_vars, boolean multiTrackissueFlag) {
 
 
 
@@ -60,29 +61,39 @@ public class ModelCounter {
 //        count = new BigDecimal(abc.countInts((long) bound));
 //      }
 
-      count = new BigDecimal(1);
-      if(multiTrackissueFlag) {
-        count = new BigDecimal(abc.countVariable(model_counting_vars.get(0), bound));
-      } else {
-        for (String var_name : model_counting_vars) {
-          if(var_name.equals("java.lang.Character"))
-            continue;
-          count = count.multiply(new BigDecimal(abc.countVariable(var_name, bound)));
+//      count = new BigDecimal(1);
+//      if(multiTrackissueFlag) {
+//        count = new BigDecimal(abc.countVariable(model_counting_vars.get(0), bound));
+//      } else {
+//        for (String var_name : model_counting_vars) {
+//          if(var_name.equals("java.lang.Character"))
+//            continue;
+//          count = count.multiply(new BigDecimal(abc.countVariable(var_name, bound)));
+//        }
+//      }
+
+      int numIntVar = 0, numStringVar = 0;
+      if (model_counting_vars.size() > 1) {
+        for(Pair<String,String> var : model_counting_vars) {
+          if(var.getValue().equals("java.lang.String"))
+            numStringVar++;
+          else
+            numIntVar++;
         }
       }
 
-      if (model_counting_vars.size() > 1) {
+      if(model_counting_vars.size() > 1 && numStringVar == 0) {
         count = new BigDecimal(abc.countInts(bound));
       }
       else {
         count = new BigDecimal(1);
         if(multiTrackissueFlag) {
-          count = new BigDecimal(abc.countVariable(model_counting_vars.get(0), bound));
+          count = new BigDecimal(abc.countVariable(model_counting_vars.get(0).getKey(), bound));
         } else {
-          for (String var_name : model_counting_vars) {
-            if(var_name.equals("java.lang.Character"))
+          for (Pair<String,String> var : model_counting_vars) {
+            if(var.getKey().equals("java.lang.Character"))
               continue;
-            count = count.multiply(new BigDecimal(abc.countVariable(var_name, bound)));
+            count = count.multiply(new BigDecimal(abc.countVariable(var.getKey(), bound)));
           }
         }
       }
@@ -115,9 +126,9 @@ public class ModelCounter {
             "(assert (<= (len  h) 4))\n" +
             "(check-sat)";
 
-    List<String> model_counting_vars = new ArrayList<String>();
-    model_counting_vars.add("l");
-    model_counting_vars.add("h");
+    List<Pair<String,String>> model_counting_vars = new ArrayList<>();
+    model_counting_vars.add(new Pair<String,String>("l","java.lang.String"));
+    model_counting_vars.add(new Pair<String,String>("h","java.lang.String"));
     BigDecimal count = mc.getModelCount(constraint, model_counting_vars, false);
 
     System.out.println(count);

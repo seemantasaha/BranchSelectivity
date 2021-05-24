@@ -899,7 +899,7 @@ public class BranchSelectivity {
                             continue;
 
                         assertionEmpty = false;
-                        List<String> model_counting_vars = new ArrayList<String>();
+                        List<Pair<String,String>> model_counting_vars = new ArrayList<Pair<String,String>>();
                         boolean countingModeStringFlag = false;
                         MultiTrackIssueFlag = false;
                         MethodInCondition = false;
@@ -911,7 +911,7 @@ public class BranchSelectivity {
 
 
 
-                        if(condExpr.toString().equals("(column < text.length()) && ((((text.charAt(column) >= 'A') && (text.charAt(column) <= 'Z')) || ((text.charAt(column) >= 'a') && (text.charAt(column) <= 'z'))) || ((text.charAt(column) >= '0') && (text.charAt(column) <= '9')))")) {
+                        if(condExpr.toString().equals("mStringIdx >= currentStr.length()")) {
                              System.out.println("here i am");
                         }
 
@@ -1000,13 +1000,13 @@ public class BranchSelectivity {
                                         //modelCounter.setBound(4);
                                     } else if (var.getValue().equals("java.lang.String")) {
                                         numStringVars++;
-                                        String range = "/[ -~]{1,16}/";
+                                        //String range = "/[ -~]{1,16}/";
                                         //String range = "/[-0MCDXLVI]*/";
-                                        String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
+                                        //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
                                         modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
                                         modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                        modelCountingConstraint += range_constraint+"\n";
-                                        modelCountingDomain += range_constraint+"\n";
+                                        //modelCountingConstraint += range_constraint+"\n";
+                                        //modelCountingDomain += range_constraint+"\n";
                                         countingModeStringFlag = true;
                                         //modelCounter.setModelCountMode("abc.string");
                                         //modelCounter.setBound(16);
@@ -1023,7 +1023,7 @@ public class BranchSelectivity {
                                         //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
                                         //modelCounter.setBound(8);
                                     }
-                                    model_counting_vars.add(var.getKey());
+                                    model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
                                 }
 
                                 if(numStringVars > 3) {
@@ -1120,13 +1120,13 @@ public class BranchSelectivity {
                                         //modelCounter.setBound(4);
                                     } else if (var.getValue().equals("java.lang.String")) {
                                         numStringVars++;
-                                        String range = "/[ -~]{1,16}/";
+                                        //String range = "/[ -~]{1,16}/";
                                         //String range = "/[-0MCDXLVI]*/";
-                                        String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
+                                        //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
                                         modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
                                         modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                        modelCountingConstraint += range_constraint+"\n";
-                                        modelCountingDomain += range_constraint+"\n";
+                                        //modelCountingConstraint += range_constraint+"\n";
+                                        //modelCountingDomain += range_constraint+"\n";
                                         countingModeStringFlag = true;
                                         //modelCounter.setModelCountMode("abc.string");
                                         //modelCounter.setBound(16);
@@ -1153,7 +1153,7 @@ public class BranchSelectivity {
                                             //modelCounter.setBound(8);
                                         }
                                     }
-                                    model_counting_vars.add(var.getKey());
+                                    model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
                                 }
 
                                 if(numStringVars > 3) {
@@ -1213,13 +1213,13 @@ public class BranchSelectivity {
                                         //modelCounter.setBound(4);
                                     } else if (var.getValue().equals("java.lang.String")) {
                                         numStringVarToCount++;
-                                        String range = "/[ -~]{1,16}/";
+                                        //String range = "/[ -~]{1,16}/";
                                         //String range = "/[-0MCDXLVI]*/";
-                                        String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
+                                        //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
                                         modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
                                         modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                        modelCountingConstraint += range_constraint + "\n";
-                                        modelCountingDomain += range_constraint + "\n";
+                                        //modelCountingConstraint += range_constraint + "\n";
+                                        //modelCountingDomain += range_constraint + "\n";
                                         countingModeStringFlag = true;
                                         //modelCounter.setModelCountMode("abc.string");
                                         //modelCounter.setBound(16);
@@ -1236,7 +1236,7 @@ public class BranchSelectivity {
                                         //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
                                         //modelCounter.setBound(8);
                                     }
-                                    model_counting_vars.add(var.getKey());
+                                    model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
                                 }
 
                                 if (numStringVarToCount > 3) {
@@ -1278,13 +1278,13 @@ public class BranchSelectivity {
                                     continue;
 
                                 BigDecimal cons_count = modelCounter.getModelCount(modelCountingConstraint, model_counting_vars, MultiTrackIssueFlag);
-                                //System.out.println("Branch model count: " + cons_count);
+                                System.out.println("Branch model count: " + cons_count);
 
                                 modelCountingDomain += "(assert true)\n";
                                 modelCountingDomain += "(check-sat)";
                                 System.out.println(modelCountingDomain);
                                 BigDecimal dom_count = modelCounter.getModelCount(modelCountingDomain, model_counting_vars, false);
-                                //System.out.println("Branch domain count:" + dom_count);
+                                System.out.println("Branch domain count:" + dom_count);
 
                                 prob_true = cons_count.doubleValue() / dom_count.doubleValue();
                                 if(prob_true == 1.0)
@@ -1293,8 +1293,8 @@ public class BranchSelectivity {
                                     prob_true = 0.0000000001;
                                 prob_false = 1.0 - prob_true;
 
-                                //System.out.println("True branch probability: " + prob_true);
-                                //System.out.println("False branch probability: " + prob_false);
+                                System.out.println("True branch probability: " + prob_true);
+                                System.out.println("False branch probability: " + prob_false);
 
                                 numberOfBranchesConsidered++;
                                 if (prob_true < 0.05 || prob_false < 0.05) {
