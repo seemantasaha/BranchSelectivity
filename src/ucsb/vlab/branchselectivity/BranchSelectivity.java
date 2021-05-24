@@ -471,6 +471,11 @@ public class BranchSelectivity {
                 string = reshapeString(string);
                 variableInConstraint.add(new Pair<String, String>(string, (((CtFieldReadImpl) op).getType().toString())));
             }
+            else if (((CtFieldReadImpl)op).getVariable().toString().equals("length")) {
+                string = op.toString();
+                string = reshapeString(string);
+                variableInConstraint.add(new Pair<String, String>(string, "int"));
+            }
             else {
                 assertionEmpty = true;
                 //System.out.println("culprit 4");
@@ -911,7 +916,7 @@ public class BranchSelectivity {
 
 
 
-                        if(condExpr.toString().equals("mStringIdx >= currentStr.length()")) {
+                        if(condExpr.toString().equals("errors.length == 0")) {
                              System.out.println("here i am");
                         }
 
