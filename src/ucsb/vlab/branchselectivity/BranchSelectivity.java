@@ -1,21 +1,21 @@
 package ucsb.vlab.branchselectivity;
 
 import com.martiansoftware.util.StringUtils;
+import spoon.reflect.cu.SourcePosition;
+import spoon.reflect.path.CtPath;
+import spoon.reflect.path.CtRole;
+import spoon.reflect.visitor.CtVisitor;
+import spoon.reflect.visitor.chain.CtConsumableFunction;
+import spoon.reflect.visitor.chain.CtFunction;
+import spoon.reflect.visitor.chain.CtQuery;
 import vlab.cs.ucsb.edu.ModelCounter;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Properties;
-import java.util.Set;
+import java.lang.annotation.Annotation;
+import java.util.*;
 import java.lang.String;
 import java.math.BigDecimal;
 
@@ -804,8 +804,6 @@ public class BranchSelectivity {
                 //if(ctClass.getSimpleName().contains("InputDetailASTJustToMakeStackoverflowError"))
                 //    continue;
 
-                currentMethodInfo += ctClass.getQualifiedName() + ":";
-
                 for (CtMethod<?> method : ctClass.getMethods()) {
                     //System.out.println("Method Name: " + method.getSimpleName());
                     numberOfMethods++;
@@ -814,7 +812,7 @@ public class BranchSelectivity {
                     //    continue;
 
                     // to collect only necessary method info
-                    currentMethodInfo += method.getSimpleName();
+                    currentMethodInfo = ctClass.getQualifiedName() + ":" + method.getSimpleName();
 
                     //if(!methodList.contains(currentMethodInfo))
                     //    continue;
@@ -828,11 +826,14 @@ public class BranchSelectivity {
                     int featureNumOfBranchesSupportedByMC = 0;
                     int featureNumberOfIfBranches = 0;
                     int featureNumberOfLoopBranches = 0;
+                    int featureNumberOfSwitchCases = 0;
                     int featureNumberOfBinaryOperations = 0;
                     int featureNumberOfUnaryOperations = 0;
                     int featureNumberOfMethodInvocations = 0;
                     int numOfVars = 0;
                     int numOfNests = 0;
+                    String condParent = "";
+                    String condEnv = "";
                     //--------------------------------------------------------------
 
 
@@ -857,6 +858,18 @@ public class BranchSelectivity {
                             return true;
                         }
                     });
+                    List<CtDo> doWhileLoopBranchList = methodBlock.getElements(new TypeFilter<CtDo>(CtDo.class){
+                        @Override
+                        public boolean matches(CtDo element) {
+                            return true;
+                        }
+                    });
+                    List<CtSwitch> switchBranchList = methodBlock.getElements(new TypeFilter<CtSwitch>(CtSwitch.class){
+                        @Override
+                        public boolean matches(CtSwitch element) {
+                            return true;
+                        }
+                    });
 
                     List<CtExpression> allConditionalExpression = new ArrayList<CtExpression>();
 
@@ -872,6 +885,28 @@ public class BranchSelectivity {
                         allConditionalExpression.add(cond.getLoopingExpression());
                         featureNumberOfLoopBranches++;
                     }
+                    for (CtDo cond : doWhileLoopBranchList) {
+                        allConditionalExpression.add(cond.getLoopingExpression());
+                        featureNumberOfLoopBranches++;
+                    }
+                    for (CtSwitch switchCase : switchBranchList) {
+                        List<CtCase> caseList = switchCase.getCases();
+                        CtExpression expr = switchCase.getSelector();
+                        for(CtCase cas : caseList) {
+                            if(cas.getCaseExpression() == null)
+                                continue;
+                            featureNumberOfSwitchCases++;
+                            CtBinaryOperator binOP = launcher.getFactory().createBinaryOperator();
+                            binOP.setKind(BinaryOperatorKind.EQ);
+                            binOP.setLeftHandOperand(expr);
+                            binOP.setRightHandOperand(cas.getCaseExpression());
+                            CtIf ctif = launcher.getFactory().createIf();
+                            ctif.setCondition(binOP);
+                            binOP.setParent(ctif);
+                            ctif.setParent(cas);
+                            allConditionalExpression.add(ctif.getCondition());
+                        }
+                    }
 
                     //System.out.println("Number of branches: " + allConditionalExpression.size());
                     numberOfBranches += allConditionalExpression.size();
@@ -884,6 +919,16 @@ public class BranchSelectivity {
 
                         if(condExpr == null)
                             continue;
+
+                        if(condExpr.getParent() instanceof CtIf) {
+                            condParent = "I";
+                        } else if(condExpr.getParent() instanceof CtFor || condExpr.getParent() instanceof  CtWhile || condExpr.getParent() instanceof CtDo) {
+                            condParent = "L";
+                        }else if(condExpr.getParent() instanceof CtSwitch) {
+                            condParent = "S";
+                        }else {
+                            condParent = "X";
+                        }
 
                         CtElement branchELem = condExpr.getParent();
 
@@ -923,7 +968,11 @@ public class BranchSelectivity {
                         String modelCountingDomain = "";
                         String modelCountingConstraint = "";
 
-                        String[] temp = condExpr.getPosition().toString().split("/");
+                        SourcePosition sourcePosition = condExpr.getPosition();
+                        if(sourcePosition.toString().equals("(unknown file)"))
+                            sourcePosition = condExpr.getParent().getParent().getParent().getPosition();
+
+                        String[] temp = sourcePosition.toString().split("/");
                         String sourceLocation = temp[temp.length-1].split("\\)")[0];
 
 //                        List<CtVariableAccess> varList = condExpr.getElements(new TypeFilter<CtVariableAccess>(CtVariableAccess.class) {
@@ -1081,6 +1130,9 @@ public class BranchSelectivity {
                             }
 
                             String assertionString = "";
+
+                            if(rightOp == null)
+                                System.out.println("here i am");
 
                             if (rightOp.toString().equals("false")) {
                                 assertionString = generateAssertion(leftOp,UnaryOperatorKind.NOT);
@@ -1266,8 +1318,18 @@ public class BranchSelectivity {
                         if(modelCountingConstraint.equals("")) {
                             System.err.println("This branch is not considered for model counting! Fifty fifty selectivity!");
                             featureNumOfBranchesSupportedByMC--;
-                            fileContent += sourceLocation + "\t" + "0.5" + "\n";
+
+                            if(condExpr.toString().contains("null")) {
+                                condEnv = "N";
+                            } else if(condExpr instanceof CtInvocationImpl) {
+                                condEnv = "M";
+                            }else {
+                                condEnv = "O";
+                            }
+
+                            fileContent += sourceLocation + "\t" + "0.5" + "," + condParent + "," + condEnv + ",false\n";
                         } else {
+                            condEnv = "O";
                             try {
 
                                 //temporary fix for mutitrack issue
@@ -1302,8 +1364,10 @@ public class BranchSelectivity {
                                 System.out.println("False branch probability: " + prob_false);
 
                                 numberOfBranchesConsidered++;
+                                boolean selectiveBranch = false;
                                 if (prob_true < 0.05 || prob_false < 0.05) {
                                     //System.err.println("This branch is selective");
+                                    selectiveBranch = true;
                                     numberOfSelectiveBranches++;
                                     featureNumOfSelectiveBranches++;
                                     Pair<String, String> classMethodPair = new Pair<String, String>(ctClass.getQualifiedName(), method.getSignature());
@@ -1316,14 +1380,12 @@ public class BranchSelectivity {
                                     //System.err.println("This branch is not selective");
                                 }
                                 if(MethodInCondition) {
-                                    fileContent += sourceLocation + "\t" + prob_false + "\n";
+                                    fileContent += sourceLocation + "\t" + prob_false + "," + condParent + "," + condEnv + "," + selectiveBranch +"\n";
                                 } else {
-                                    fileContent += sourceLocation + "\t" + prob_true + "\n";
+                                    fileContent += sourceLocation + "\t" + prob_true + "," + condParent + "," + condEnv + "," + selectiveBranch + "\n";
                                 }
-                                //fileContent += sourceLocation + "\t" + prob_true + "\n";
                             } catch (Exception ex) {
                                 //System.err.println("Not appropriate constraint to count models");
-                                //fileContent += sourceLocation + "\t" + "X" + "\n";
                             }
                         }
 
@@ -1335,6 +1397,7 @@ public class BranchSelectivity {
                             featureNumOfBranches + "," +
                             featureNumberOfIfBranches + "," +
                             featureNumberOfLoopBranches + "," +
+                            featureNumberOfSwitchCases + "," +
                             featureNumberOfUnaryOperations + "," +
                             featureNumberOfBinaryOperations + "," +
                             featureNumberOfMethodInvocations + "," +
@@ -1444,7 +1507,7 @@ public class BranchSelectivity {
             FileWriter fw = new FileWriter(bfile.getAbsoluteFile());
             bwFeature = new BufferedWriter(fw);
             bwFeature.write("method,numOfBranches," +
-                    "numbOfIf,numOfLoop," +
+                    "numbOfIf,numOfLoop,numberOfSwitchCases" +
                     "numOfUnaryOP,numOfBinOp,numOfMethodInvocation," +
                     "maxNumOfVarInBranches,avgNumOfVarsInBranches," +
                     "numOfBrancesSupportedByMC," +
