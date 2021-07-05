@@ -85,6 +85,9 @@ public class ModelCounter {
       if(model_counting_vars.size() > 1 && numStringVar == 0) {
         count = new BigDecimal(abc.countInts(bound));
       }
+      else if(model_counting_vars.size() == numStringVar) {
+          count = new BigDecimal(abc.countStrs(16));
+      }
       else {
         count = new BigDecimal(1);
         if(multiTrackissueFlag) {

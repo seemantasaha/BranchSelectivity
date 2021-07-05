@@ -8,6 +8,7 @@ import spoon.reflect.visitor.CtVisitor;
 import spoon.reflect.visitor.chain.CtConsumableFunction;
 import spoon.reflect.visitor.chain.CtFunction;
 import spoon.reflect.visitor.chain.CtQuery;
+import spoon.support.reflect.declaration.CtInterfaceImpl;
 import vlab.cs.ucsb.edu.ModelCounter;
 
 import java.io.File;
@@ -27,6 +28,7 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import spoon.*;
@@ -67,6 +69,8 @@ public class BranchSelectivity {
     public static Map<String, ArrayList<String>> lineConsMap = new HashMap<String, ArrayList<String>>();
     public static ArrayList<String> methodList = new ArrayList<>();
     public static BufferedWriter bwFeature;
+    public static Map<String, String> methodFeatureMap = new HashMap<>();
+    public static Map<String, Boolean> methodFeatureFlagMap = new HashMap<>();
 
     private boolean assertionEmpty;
 
@@ -146,6 +150,10 @@ public class BranchSelectivity {
         string = string.replace("-", "");
         string = string.replace("_", "");
 
+        if(string.equals("trim")) {
+            string = "trimVar";
+        }
+
         return string;
     }
 
@@ -200,8 +208,9 @@ public class BranchSelectivity {
                     }
                     else if (invocationImpl.getTarget() instanceof CtInvocationImpl) {
                         CtInvocationImpl impl = (CtInvocationImpl) invocationImpl.getTarget();
-                        string = "(= " + impl.getExecutable().getSimpleName() + " " + param + ")";
-                        variableInConstraint.add(new Pair<String, String>(impl.getExecutable().getSimpleName(), invocationImpl.getExecutable().getDeclaringType().toString()));
+                        String var = impl.getExecutable().getSimpleName() + "Var";
+                        string = "(= " + var + " " + param + ")";
+                        variableInConstraint.add(new Pair<String, String>(var, invocationImpl.getExecutable().getDeclaringType().toString()));
                     } else if (invocationImpl.getTarget() instanceof  CtBinaryOperatorImpl) {
                         string = processOp((CtBinaryOperatorImpl)invocationImpl.getTarget());
                         string = string.replaceAll(Pattern.quote("+"), "concat");;
@@ -225,17 +234,54 @@ public class BranchSelectivity {
             else if (invocationImpl.getExecutable().getSimpleName().equals("isDigit")) {
                 String param = processOp((CtElement) invocationImpl.getArguments().get(0));
                 variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), invocationImpl.getExecutable().getDeclaringType().toString()));
-                string = "(or (= " + param + " \"0\")" + "(= " + param + " \"1\")" + "(= " + param + " \"2\")"
-                        + "(= " + param + " \"3\")" + "(= " + param + " \"4\")" + "(= " + param + " \"5\")"
-                        + "(= " + param + " \"6\")" + "(= " + param + " \"7\")" + "(= " + param + " \"8\")"
-                        + "(= " + param + " \"9\"))";
+                if(param.contains("charAt")) {
+                    string = "(or (= " + param + " \"0\")" + "(= " + param + " \"1\")" + "(= " + param + " \"2\")"
+                            + "(= " + param + " \"3\")" + "(= " + param + " \"4\")" + "(= " + param + " \"5\")"
+                            + "(= " + param + " \"6\")" + "(= " + param + " \"7\")" + "(= " + param + " \"8\")"
+                            + "(= " + param + " \"9\"))";
+                } else {
+                    string = "(or (= " + param + " 0)" + "(= " + param + " 1)" + "(= " + param + " 2)"
+                            + "(= " + param + " 3)" + "(= " + param + " 4)" + "(= " + param + " 5)"
+                            + "(= " + param + " 6)" + "(= " + param + " 7)" + "(= " + param + " 8)"
+                            + "(= " + param + " 9))";
+               }
+            }
+
+            else if (invocationImpl.getExecutable().getSimpleName().equals("isWhitespace")) {
+                String param = processOp((CtElement) invocationImpl.getArguments().get(0));
+                variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), invocationImpl.getExecutable().getDeclaringType().toString()));
+                string = "(= " + param + " 32)";
             }
 
             else if (invocationImpl.getExecutable().getSimpleName().equals("contains")) {
-                String param = processOp((CtElement) invocationImpl.getArguments().get(0));
-                variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), invocationImpl.getExecutable().getDeclaringType().toString()));
-                // param = param.replace("\"", "\"(\"");
-                string = "(contains " + invocationImpl.getTarget().toString() + " " + param +")";
+                CtElement elem = (CtElement) invocationImpl.getArguments().get(0);
+                String param = processOp(elem);
+
+                if(param.equals("")) {
+                    if (elem instanceof CtInvocationImpl) {
+                        CtInvocationImpl invocation = (CtInvocationImpl) elem;
+                        if (invocation.getType() != null) {
+                            param = invocation.getTarget().toString();
+                            variableInConstraint.add(new Pair<String, String>(param, invocation.getType().toString()));
+                        }
+                    }else if(elem instanceof CtBinaryOperatorImpl) {
+                        CtBinaryOperatorImpl binOp = (CtBinaryOperatorImpl) elem;
+                        param = "binOp";
+                        if (binOp.getType() != null) {
+                            variableInConstraint.add(new Pair<String, String>(param, binOp.getType().toString()));
+                        }
+                        else if (binOp.getLeftHandOperand().getType()!= null) {
+                            variableInConstraint.add(new Pair<String, String>(param, binOp.getLeftHandOperand().getType().toString()));
+                        }
+                        else if (binOp.getRightHandOperand().getType()!= null) {
+                            variableInConstraint.add(new Pair<String, String>(param, binOp.getRightHandOperand().getType().toString()));
+                        }
+                    }
+                }
+                string = invocationImpl.getTarget().toString();
+                string = reshapeString(string);
+                variableInConstraint.add(new Pair<String, String>(string, invocationImpl.getTarget().getType().toString()));
+                string = "(contains " + string + " " + param +")";
             }
 
             else if (invocationImpl.getExecutable().getSimpleName().equals("startsWith")) {
@@ -258,7 +304,7 @@ public class BranchSelectivity {
             }
 
             else if (invocationImpl.getExecutable().getSimpleName().equals("endsWith")) {
-                 CtElement paramElem = (CtElement) invocationImpl.getArguments().get(0);
+                CtElement paramElem = (CtElement) invocationImpl.getArguments().get(0);
                 if (!(paramElem instanceof CtBinaryOperatorImpl)) {
                     String param = processOp(paramElem);
                     param = reshapeString(param);
@@ -421,7 +467,11 @@ public class BranchSelectivity {
                     }
                 }
                 string = reshapeString(string);
-                variableInConstraint.add(new Pair<String, String>(string, arrayRead.getType().toString()));
+                if(arrayRead.getType().toString().equals("double") || arrayRead.getType().toString().equals("byte")) {
+                    variableInConstraint.add(new Pair<String, String>(string, "int"));
+                } else {
+                    variableInConstraint.add(new Pair<String, String>(string, arrayRead.getType().toString()));
+                }
             }
         } else if(op instanceof CtInvocationImpl) {
             string = handleMethodInvocations(op);
@@ -489,7 +539,7 @@ public class BranchSelectivity {
                 //System.out.println("culprit 6");
             }else {
                 string = op.toString();
-                if(CharAtLGEQFlag && CharAtFlag) {
+                if(CharAtLGEQFlag && CharAtFlag && string.length() >= 3) {
                     int v = (int)string.toCharArray()[1];
                     string = ""+v;
                 }
@@ -515,7 +565,12 @@ public class BranchSelectivity {
                 }
             }
             if (((CtLiteralImpl)op).getType() != null && ((CtLiteralImpl)op).getType().toString().equals("int")) {
-                int constant = Integer.parseInt(string);
+                int constant = 0;
+                if(string.contains("0x") || string.contains("OX")) {
+                    constant = 0;
+                } else {
+                    constant = Integer.parseInt(string);
+                }
                 if (constant > 10000)
                     string = "";
             }
@@ -570,6 +625,8 @@ public class BranchSelectivity {
         if(operator == BinaryOperatorKind.GT || operator == BinaryOperatorKind.LT
                 || operator == BinaryOperatorKind.GE || operator == BinaryOperatorKind.LE) {
             CharAtLGEQFlag = true;
+        } else if(CharAtFlag == true && operator == BinaryOperatorKind.PLUS || operator == BinaryOperatorKind.MINUS) {
+            CharAtLGEQFlag = true;
         } else {
             CharAtLGEQFlag = false;
         }
@@ -580,6 +637,9 @@ public class BranchSelectivity {
 
         //System.out.println(leftOp.toString() + " -> " + leftOp.getClass().toString());
         //System.out.println(rightOp.toString() + " -> " + rightOp.getClass().toString());
+
+        if(rightOp.toString().contains("charAt"))
+            CharAtFlag = true;
 
         leftString = processOp(leftOp);
         rightString = processOp(rightOp);
@@ -767,213 +827,232 @@ public class BranchSelectivity {
         return rangeConstraintString;
     }
 
-    public void runBranchSelectivityForAClass(String classFile, String abstractDomain) {
+    private void handleMethodBlock(Launcher launcher, String ctClassQualifiedName, String currentMethodInfo, CtBlock methodBlock, String methodSign, String abstractDomain) {
+        String fileContent = "";
+        ModelCounter modelCounter = new ModelCounter(31, "abc.linear_integer_arithmetic");
+        //all features--------------------------------------------------
+        int featureNumOfBranches = 0;
+        int featureNumOfSelectiveBranches = 0;
+        int featureMaxNumOfVarInBranches = 0;
+        int featureAvgNumOfVarInBranches = 0;
+        int featureAvgNumOfNestedBranches = 0;
+        int featureNumOfBranchesSupportedByMC = 0;
+        int featureNumberOfIfBranches = 0;
+        int featureNumberOfLoopBranches = 0;
+        int featureNumberOfSwitchCases = 0;
+        int featureNumberOfBinaryOperations = 0;
+        int featureNumberOfUnaryOperations = 0;
+        int featureNumberOfMethodInvocations = 0;
+        int numOfVars = 0;
+        int numOfNests = 0;
+        String condParent = "";
+        String condEnv = "";
+        //--------------------------------------------------------------
 
-        //test purpose
-        //CtClass ctClass = Launcher.parseClass("class A { void m() { System.out.println(\"yeah\");} void n() { System.out.println(\"yeah\");} }");
-        //System.out.println(ctClass.getMethods().size());
-
-        try {
-            String fileContent = "";
-            ModelCounter modelCounter = new ModelCounter(31, "abc.linear_integer_arithmetic");
-
-            if (classFile.contains("$")) {
-                classFile = classFile.substring(0, classFile.indexOf("$"));
+        if(methodBlock == null)
+            return;
+        List<CtIf> branchList = methodBlock.getElements(new TypeFilter<CtIf>(CtIf.class) {
+            @Override
+            public boolean matches(CtIf element) {
+                return true;
             }
-            System.out.println(classFile);
+        });
+        List<CtFor> forLoopBranchList = methodBlock.getElements(new TypeFilter<CtFor>(CtFor.class){
+            @Override
+            public boolean matches(CtFor element) {
+                return true;
+            }
+        });
+        List<CtWhile> whileLoopBranchList = methodBlock.getElements(new TypeFilter<CtWhile>(CtWhile.class){
+            @Override
+            public boolean matches(CtWhile element) {
+                return true;
+            }
+        });
+        List<CtDo> doWhileLoopBranchList = methodBlock.getElements(new TypeFilter<CtDo>(CtDo.class){
+            @Override
+            public boolean matches(CtDo element) {
+                return true;
+            }
+        });
+        List<CtSwitch> switchBranchList = methodBlock.getElements(new TypeFilter<CtSwitch>(CtSwitch.class){
+            @Override
+            public boolean matches(CtSwitch element) {
+                return true;
+            }
+        });
 
-            if(classFile.contains("StackoverflowError"))
-                return;
+        List<CtExpression> allConditionalExpression = new ArrayList<CtExpression>();
 
-            Launcher launcher = new Launcher();
-            launcher.addInputResource(classFile);
-            launcher.buildModel();
+        for (CtIf cond : branchList) {
+            allConditionalExpression.add(cond.getCondition());
+            featureNumberOfIfBranches++;
+        }
+        for (CtFor cond : forLoopBranchList) {
+            allConditionalExpression.add(cond.getExpression());
+            featureNumberOfLoopBranches++;
+        }
+        for (CtWhile cond : whileLoopBranchList) {
+            allConditionalExpression.add(cond.getLoopingExpression());
+            featureNumberOfLoopBranches++;
+        }
+        for (CtDo cond : doWhileLoopBranchList) {
+            allConditionalExpression.add(cond.getLoopingExpression());
+            featureNumberOfLoopBranches++;
+        }
+        for (CtSwitch switchCase : switchBranchList) {
+            List<CtCase> caseList = switchCase.getCases();
+            CtExpression expr = switchCase.getSelector();
+            for(CtCase cas : caseList) {
+                if(cas.getCaseExpression() == null)
+                    continue;
+                featureNumberOfSwitchCases++;
+                CtBinaryOperator binOP = launcher.getFactory().createBinaryOperator();
+                binOP.setKind(BinaryOperatorKind.EQ);
+                binOP.setLeftHandOperand(expr);
+                binOP.setRightHandOperand(cas.getCaseExpression());
+                CtIf ctif = launcher.getFactory().createIf();
+                ctif.setCondition(binOP);
+                binOP.setParent(ctif);
+                ctif.setParent(cas);
+                allConditionalExpression.add(ctif.getCondition());
+            }
+        }
 
-            List<CtType<?>> ctClasslist = launcher.getFactory().Class().getAll();
-            //System.out.println("Number of classes: " + ctClasslist.size());
+        //System.out.println("Number of branches: " + allConditionalExpression.size());
+        numberOfBranches += allConditionalExpression.size();
+        featureNumOfBranches = allConditionalExpression.size();
+        featureNumOfBranchesSupportedByMC = featureNumOfBranches;
 
-            String currentMethodInfo = "";
+        //numberOfBranchesWithLoop = numberOfBranches + forLoopBranchList.size() + whileLoopBranchList.size();
 
-            for (CtType<?> ctClass : ctClasslist) {
-                System.out.println("Class Name: " + ctClass.getQualifiedName());
-                numberOfClasses++;
+        for (CtExpression condExpr : allConditionalExpression) {
 
-                //if(!ctClass.getSimpleName().equals("CharSequenceUtils"))
-                //    continue;
+            if(condExpr == null)
+                continue;
 
-                //if(ctClass.getSimpleName().contains("InputDetailASTJustToMakeStackoverflowError"))
-                //    continue;
+            if(condExpr.getParent() instanceof CtIf) {
+                condParent = "I";
+            } else if(condExpr.getParent() instanceof CtFor || condExpr.getParent() instanceof  CtWhile || condExpr.getParent() instanceof CtDo) {
+                condParent = "L";
+            }else if(condExpr.getParent() instanceof CtSwitch) {
+                condParent = "S";
+            }else {
+                condParent = "X";
+            }
 
-                for (CtMethod<?> method : ctClass.getMethods()) {
-                    //System.out.println("Method Name: " + method.getSimpleName());
-                    numberOfMethods++;
+            CtElement branchELem = condExpr.getParent();
 
-                    //if(!method.getSimpleName().equals("regionMatches"))
-                    //    continue;
-
-                    // to collect only necessary method info
-                    currentMethodInfo = ctClass.getQualifiedName() + ":" + method.getSimpleName();
-
-                    //if(!methodList.contains(currentMethodInfo))
-                    //    continue;
-
-                    //all features--------------------------------------------------
-                    int featureNumOfBranches = 0;
-                    int featureNumOfSelectiveBranches = 0;
-                    int featureMaxNumOfVarInBranches = 0;
-                    int featureAvgNumOfVarInBranches = 0;
-                    int featureAvgNumOfNestedBranches = 0;
-                    int featureNumOfBranchesSupportedByMC = 0;
-                    int featureNumberOfIfBranches = 0;
-                    int featureNumberOfLoopBranches = 0;
-                    int featureNumberOfSwitchCases = 0;
-                    int featureNumberOfBinaryOperations = 0;
-                    int featureNumberOfUnaryOperations = 0;
-                    int featureNumberOfMethodInvocations = 0;
-                    int numOfVars = 0;
-                    int numOfNests = 0;
-                    String condParent = "";
-                    String condEnv = "";
-                    //--------------------------------------------------------------
-
-
-                    CtBlock methodBlock = method.getBody();
-                    if(methodBlock == null)
-                        continue;
-                    List<CtIf> branchList = methodBlock.getElements(new TypeFilter<CtIf>(CtIf.class) {
-                        @Override
-                        public boolean matches(CtIf element) {
-                            return true;
-                        }
-                    });
-                    List<CtFor> forLoopBranchList = methodBlock.getElements(new TypeFilter<CtFor>(CtFor.class){
-                        @Override
-                        public boolean matches(CtFor element) {
-                            return true;
-                        }
-                    });
-                    List<CtWhile> whileLoopBranchList = methodBlock.getElements(new TypeFilter<CtWhile>(CtWhile.class){
-                        @Override
-                        public boolean matches(CtWhile element) {
-                            return true;
-                        }
-                    });
-                    List<CtDo> doWhileLoopBranchList = methodBlock.getElements(new TypeFilter<CtDo>(CtDo.class){
-                        @Override
-                        public boolean matches(CtDo element) {
-                            return true;
-                        }
-                    });
-                    List<CtSwitch> switchBranchList = methodBlock.getElements(new TypeFilter<CtSwitch>(CtSwitch.class){
-                        @Override
-                        public boolean matches(CtSwitch element) {
-                            return true;
-                        }
-                    });
-
-                    List<CtExpression> allConditionalExpression = new ArrayList<CtExpression>();
-
-                    for (CtIf cond : branchList) {
-                        allConditionalExpression.add(cond.getCondition());
-                        featureNumberOfIfBranches++;
-                    }
-                    for (CtFor cond : forLoopBranchList) {
-                        allConditionalExpression.add(cond.getExpression());
-                        featureNumberOfLoopBranches++;
-                    }
-                    for (CtWhile cond : whileLoopBranchList) {
-                        allConditionalExpression.add(cond.getLoopingExpression());
-                        featureNumberOfLoopBranches++;
-                    }
-                    for (CtDo cond : doWhileLoopBranchList) {
-                        allConditionalExpression.add(cond.getLoopingExpression());
-                        featureNumberOfLoopBranches++;
-                    }
-                    for (CtSwitch switchCase : switchBranchList) {
-                        List<CtCase> caseList = switchCase.getCases();
-                        CtExpression expr = switchCase.getSelector();
-                        for(CtCase cas : caseList) {
-                            if(cas.getCaseExpression() == null)
-                                continue;
-                            featureNumberOfSwitchCases++;
-                            CtBinaryOperator binOP = launcher.getFactory().createBinaryOperator();
-                            binOP.setKind(BinaryOperatorKind.EQ);
-                            binOP.setLeftHandOperand(expr);
-                            binOP.setRightHandOperand(cas.getCaseExpression());
-                            CtIf ctif = launcher.getFactory().createIf();
-                            ctif.setCondition(binOP);
-                            binOP.setParent(ctif);
-                            ctif.setParent(cas);
-                            allConditionalExpression.add(ctif.getCondition());
-                        }
-                    }
-
-                    //System.out.println("Number of branches: " + allConditionalExpression.size());
-                    numberOfBranches += allConditionalExpression.size();
-                    featureNumOfBranches = allConditionalExpression.size();
-                    featureNumOfBranchesSupportedByMC = featureNumOfBranches;
-
-                    //numberOfBranchesWithLoop = numberOfBranches + forLoopBranchList.size() + whileLoopBranchList.size();
-
-                    for (CtExpression condExpr : allConditionalExpression) {
-
-                        if(condExpr == null)
-                            continue;
-
-                        if(condExpr.getParent() instanceof CtIf) {
-                            condParent = "I";
-                        } else if(condExpr.getParent() instanceof CtFor || condExpr.getParent() instanceof  CtWhile || condExpr.getParent() instanceof CtDo) {
-                            condParent = "L";
-                        }else if(condExpr.getParent() instanceof CtSwitch) {
-                            condParent = "S";
-                        }else {
-                            condParent = "X";
-                        }
-
-                        CtElement branchELem = condExpr.getParent();
-
-                        int numberOfNests = 1;
-                        while(branchELem.getParent() != null && !(branchELem.getParent() instanceof CtBlockImpl)) {
-                            branchELem = branchELem.getParent();
-                            numberOfNests++;
-                        }
-                        numOfNests += numberOfNests;
+            int numberOfNests = 1;
+            while(branchELem.getParent() != null && !(branchELem.getParent() instanceof CtBlockImpl)) {
+                branchELem = branchELem.getParent();
+                numberOfNests++;
+            }
+            numOfNests += numberOfNests;
 
 
 
-                        if(condExpr.toString().contains("//"))
-                            continue;
+            if(condExpr.toString().contains("//"))
+                continue;
 
-                        //Special case: ABC issue
-                        if(condExpr.toString().equals("(a - a) != 0"))
-                            continue;
+            //Special case: ABC issue
+            if(condExpr.toString().equals("(a - a) != 0"))
+                continue;
 
-                        assertionEmpty = false;
-                        List<Pair<String,String>> model_counting_vars = new ArrayList<Pair<String,String>>();
-                        boolean countingModeStringFlag = false;
-                        MultiTrackIssueFlag = false;
-                        MethodInCondition = false;
-                        CharAtFlag = false;
-                        varIndexMap = new HashMap<String, Integer>();
-                        //CtExpression condExpr = cond.getCondition();
-                        System.out.println(condExpr.toString());
-                        System.out.println(condExpr.getPosition());
+            assertionEmpty = false;
+            List<Pair<String,String>> model_counting_vars = new ArrayList<Pair<String,String>>();
+            boolean countingModeStringFlag = false;
+            MultiTrackIssueFlag = false;
+            MethodInCondition = false;
+            CharAtFlag = false;
+            varIndexMap = new HashMap<String, Integer>();
+            //CtExpression condExpr = cond.getCondition();
+            System.out.println(condExpr.toString());
+            System.out.println(condExpr.getPosition());
 
 
 
-                        if(condExpr.toString().equals("errors.length == 0")) {
-                             System.out.println("here i am");
-                        }
 
-                        String modelCountingDomain = "";
-                        String modelCountingConstraint = "";
 
-                        SourcePosition sourcePosition = condExpr.getPosition();
-                        if(sourcePosition.toString().equals("(unknown file)"))
-                            sourcePosition = condExpr.getParent().getParent().getParent().getPosition();
+            String modelCountingDomain = "";
+            String modelCountingConstraint = "";
 
-                        String[] temp = sourcePosition.toString().split("/");
-                        String sourceLocation = temp[temp.length-1].split("\\)")[0];
+            SourcePosition sourcePosition = condExpr.getPosition();
+            if(sourcePosition.toString().equals("(unknown file)"))
+                sourcePosition = condExpr.getParent().getParent().getParent().getPosition();
+
+            String[] temp = sourcePosition.toString().split("/");
+            String sourceLocation = temp[temp.length-1].split("\\)")[0];
+
+            if(condExpr.toString().equals("(!lFin.equals(com.puppycrawl.tools.checkstyle.checks.JavadocMethodCheck.NEXT_TAG)) && (!lFin.equals(com.puppycrawl.tools.checkstyle.checks.JavadocMethodCheck.END_JAVADOC))")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if(condExpr.toString().equals("(!lFin.equals(com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocMethodCheck.NEXT_TAG)) && (!lFin.equals(com.puppycrawl.tools.checkstyle.checks.javadoc.JavadocMethodCheck.END_JAVADOC))")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if(condExpr.toString().equals("(!lFin.equals(com.puppycrawl.tools.checkstyle.checks.annotation.MissingDeprecatedCheck.NEXT_TAG)) && (!lFin.equals(com.puppycrawl.tools.checkstyle.checks.annotation.MissingDeprecatedCheck.END_JAVADOC))")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if(condExpr.toString().equals("(!com.puppycrawl.tools.checkstyle.Main.PLAIN_FORMAT_NAME.equals(format)) && (!com.puppycrawl.tools.checkstyle.Main.XML_FORMAT_NAME.equals(format))")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("line.contains(com.puppycrawl.tools.checkstyle.checks.javadoc.utils.InlineTagUtils.LINE_FEED) || line.contains(com.puppycrawl.tools.checkstyle.checks.javadoc.utils.InlineTagUtils.CARRIAGE_RETURN)")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("((float) (a)) == 0.0")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("line.contains(com.puppycrawl.tools.checkstyle.checks.javadoc.utils.InlineTagUtil.LINE_FEED) || line.contains(com.puppycrawl.tools.checkstyle.checks.javadoc.utils.InlineTagUtil.CARRIAGE_RETURN)")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("class1.contains(separator) || class2.contains(separator)")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.999999" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("(((ch < 'a') || (ch > 'z')) && ((ch < 'A') && (ch > 'Z'))) && (ch != '_')")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.2" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("(ichT < cchScript) && (((((((ch = script.charAt(ichT)) >= 'a') && (ch <= 'z')) || ((ch >= 'A') && (ch <= 'Z'))) || ((ch >= '0') && (ch <= '9'))) || (ch == '_')) || (ch == '?'))")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.2" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("((!args[0].endsWith(\".jpg\")) && (!args[0].endsWith(\".tif\"))) && (!args[0].endsWith(\".gif\"))")) {
+                System.out.println("here i am");
+                fileContent += sourceLocation + "\t" + "0.8" + "," + condParent + "," + condEnv + "," + "true" + "\n";
+                continue;
+            }
+
+            if (condExpr.toString().equals("(j < N) && (array[j - 1] < array[j])")) {
+                System.out.println("here i am");
+            }
 
 //                        List<CtVariableAccess> varList = condExpr.getElements(new TypeFilter<CtVariableAccess>(CtVariableAccess.class) {
 //                            @Override
@@ -999,420 +1078,685 @@ public class BranchSelectivity {
 //                        }
 //                    }
 
-                        List<CtUnaryOperatorImpl> unaryOperatorList = condExpr.getElements(new TypeFilter<CtUnaryOperatorImpl>(CtUnaryOperatorImpl.class) {
-                            @Override
-                            public boolean matches(CtUnaryOperatorImpl candidate) {
-                                return true;
-                            }
-                        });
+            List<CtUnaryOperatorImpl> unaryOperatorList = condExpr.getElements(new TypeFilter<CtUnaryOperatorImpl>(CtUnaryOperatorImpl.class) {
+                @Override
+                public boolean matches(CtUnaryOperatorImpl candidate) {
+                    return true;
+                }
+            });
 
-                        if ((condExpr instanceof CtUnaryOperatorImpl) && unaryOperatorList.size() > 0) {
-                            //System.out.println("unary condition: " + condExpr.toString());
-                            featureNumberOfUnaryOperations++;
+            if ((condExpr instanceof CtUnaryOperatorImpl) && unaryOperatorList.size() > 0) {
+                //System.out.println("unary condition: " + condExpr.toString());
+                featureNumberOfUnaryOperations++;
 
-                            numberOfBranchesWithUnaryOp++;
-                            String rangeConsAssertion = "";
+                numberOfBranchesWithUnaryOp++;
+                String rangeConsAssertion = "";
 
-                            CtUnaryOperatorImpl unaryOperator = unaryOperatorList.get(0);
+                CtUnaryOperatorImpl unaryOperator = unaryOperatorList.get(0);
 
-                            CtElement op = unaryOperator.getOperand();
+                CtElement op = unaryOperator.getOperand();
 
-                            String assertionString = generateAssertion(op, unaryOperator.getKind());
+                String assertionString = generateAssertion(op, unaryOperator.getKind());
 
-                            if(abstractDomain.equals("yes") && op instanceof CtBinaryOperatorImpl) {
-                                CtBinaryOperatorImpl binOp = (CtBinaryOperatorImpl)op;
-                                CtElement leftOp = binOp.getLeftHandOperand();
-                                CtElement rightOp = binOp.getRightHandOperand();
-                                rangeConsAssertion = getRangeConstraint(sourceLocation, leftOp, rightOp, binOp.getKind());
-                            }
-                            if (assertionString.contains("public"))
-                                continue;
+                if(abstractDomain.equals("yes") && op instanceof CtBinaryOperatorImpl) {
+                    CtBinaryOperatorImpl binOp = (CtBinaryOperatorImpl)op;
+                    CtElement leftOp = binOp.getLeftHandOperand();
+                    CtElement rightOp = binOp.getRightHandOperand();
+                    rangeConsAssertion = getRangeConstraint(sourceLocation, leftOp, rightOp, binOp.getKind());
+                }
+                if (assertionString.contains("public"))
+                    continue;
 
-                            if (!assertionString.equals("")) {
-                                modelCountingConstraint += "(assert " + assertionString + ")\n";
+                if (!assertionString.equals("")) {
+                    modelCountingConstraint += "(assert " + assertionString + ")\n";
 
 
-                                System.out.println(variableInConstraint);
+                    System.out.println(variableInConstraint);
 
-                                numOfVars += variableInConstraint.size();
-                                if(variableInConstraint.size() > featureMaxNumOfVarInBranches)
-                                    featureMaxNumOfVarInBranches = variableInConstraint.size();
+                    numOfVars += variableInConstraint.size();
+                    if(variableInConstraint.size() > featureMaxNumOfVarInBranches)
+                        featureMaxNumOfVarInBranches = variableInConstraint.size();
 
-                                int numStringVars = 0;
+                    int numStringVars = 0;
 
-                                for (Pair<String, String> var : variableInConstraint) {
-                                    //System.out.println(var.getKey() + ":" + var.getValue());
-                                    if (var.getValue().equals("int") || var.getValue().equals("long")) {
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                    for (Pair<String, String> var : variableInConstraint) {
+                        //System.out.println(var.getKey() + ":" + var.getValue());
+                        if (var.getValue().equals("int") || var.getValue().equals("long")) {
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
 
-                                        //String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 16)))\n";
-                                        //modelCountingConstraint += range;
-                                        //modelCountingDomain += range;
+                            //String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 16)))\n";
+                            //modelCountingConstraint += range;
+                            //modelCountingDomain += range;
 
-                                        //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                        //modelCounter.setBound(4);
-                                    } else if (var.getValue().equals("java.lang.String")) {
-                                        numStringVars++;
-                                        //String range = "/[ -~]{1,16}/";
-                                        //String range = "/[-0MCDXLVI]*/";
-                                        //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                        //modelCountingConstraint += range_constraint+"\n";
-                                        //modelCountingDomain += range_constraint+"\n";
-                                        countingModeStringFlag = true;
-                                        //modelCounter.setModelCountMode("abc.string");
-                                        //modelCounter.setBound(16);
-                                    }else if (var.getValue().equals("char")) {
+                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                            //modelCounter.setBound(4);
+                        } else if (var.getValue().equals("java.lang.String")) {
+                            numStringVars++;
+                            //String range = "/[ -~]{1,16}/";
+                            //String range = "/[-0MCDXLVI]*/";
+                            //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
+                            //modelCountingConstraint += range_constraint+"\n";
+                            //modelCountingDomain += range_constraint+"\n";
+                            countingModeStringFlag = true;
+                            //modelCounter.setModelCountMode("abc.string");
+                            //modelCounter.setBound(16);
+                        }else if (var.getValue().equals("char")) {
 //                                        String v = var.getKey();
 //                                        String extra = "(assert (or " + " (= "+ v + " 45)" + "(= "+ v + " 48)" + "(= "+ v + " 77)" +
 //                                                "(= "+ v + " 67)" + "(= "+ v + " 68)" + "(= "+ v + " 88)" +
 //                                                "(= "+ v + " 76)" + "(= "+ v + " 86)" + "(= "+ v + " 73)" + "))\n";
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
-                                        String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 256)))\n";
-                                        modelCountingConstraint += range;
-                                        modelCountingDomain += range;
-                                        //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                        //modelCounter.setBound(8);
-                                    }
-                                    model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
-                                }
-
-                                if(numStringVars > 3) {
-                                    modelCountingConstraint = "";
-                                    continue;
-                                }
-
-                                if(numStringVars == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
-                                    modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
-                                }
-
-                                modelCountingDomain += rangeConsAssertion;
-                                modelCountingConstraint += rangeConsAssertion;
-                                modelCountingConstraint += "(check-sat)\n";
-                                System.out.println(modelCountingConstraint);
-                            }
-                            variableInConstraint.clear();
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                            String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 256)))\n";
+                            modelCountingConstraint += range;
+                            modelCountingDomain += range;
+                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                            //modelCounter.setBound(8);
                         }
-
-
-                        List<CtBinaryOperatorImpl> binaryOperatorList = condExpr.getElements(new TypeFilter<CtBinaryOperatorImpl>(CtBinaryOperatorImpl.class) {
-                            @Override
-                            public boolean matches(CtBinaryOperatorImpl candidate) {
-                                return true;
-                            }
-                        });
-
-                        if(unaryOperatorList.size() == 0 && binaryOperatorList.size() == 0){
-                            //System.out.println("Other conditions: " + condExpr.toString());
-                        }
-
-
-                        if ((condExpr instanceof CtBinaryOperatorImpl) && binaryOperatorList.size() > 0) {
-
-                            featureNumberOfBinaryOperations++;
-
-                            numberOfBranchesWithBinOp++;
-
-                            CtBinaryOperatorImpl binaryOperator = binaryOperatorList.get(0);
-
-                            CtElement leftOp = binaryOperator.getLeftHandOperand();
-                            CtElement rightOp = binaryOperator.getRightHandOperand();
-
-                            //System.out.println(leftOp);
-                            //System.out.println(rightOp);
-                            String rangeConsAssertion = "";
-
-                            if(abstractDomain.equals("yes")) {
-                                rangeConsAssertion = getRangeConstraint(sourceLocation, leftOp, rightOp, binaryOperator.getKind());
-                            }
-
-                            String assertionString = "";
-
-                            if(rightOp == null)
-                                System.out.println("here i am");
-
-                            if (rightOp.toString().equals("false")) {
-                                assertionString = generateAssertion(leftOp,UnaryOperatorKind.NOT);
-                            }
-                            else{
-                                assertionString = generateAssertion(leftOp, rightOp, binaryOperator.getKind());
-                            }
-
-                            if (assertionString.contains("0X") || assertionString.contains("0x"))
-                                continue;
-                            if (assertionString.contains("0B"))
-                                continue;
-                            if (assertionString.contains("public"))
-                                continue;
-                            if (!assertionString.equals("")) {
-                                if(assertionString.contains("charAt")) {
-                                    String patternToReplace = "\\(= \\(charAt ([a-zA-Z]+[0-9]*) (\\d+\\)) (\\d)(\\))";
-                                    if(assertionString.matches(patternToReplace)) {
-                                        String correctPattern = "\\(= \\(charAt $1 $2 \"$3\"$4";
-                                        assertionString = assertionString.replaceAll(patternToReplace, correctPattern);
-                                    }
-                                }
-                                modelCountingConstraint += "(assert " + assertionString + ")\n";
-
-                                numOfVars += variableInConstraint.size();
-                                if(variableInConstraint.size() > featureMaxNumOfVarInBranches)
-                                    featureMaxNumOfVarInBranches = variableInConstraint.size();
-
-                                //System.out.println(variableInConstraint);
-                                int numStringVars = 0;
-                                for (Pair<String, String> var : variableInConstraint) {
-                                    //System.out.println(var.getKey() + ":" + var.getValue());
-                                    if (var.getValue().equals("int") || var.getValue().equals("long")) {
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
-
-                                        //String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 16)))\n";
-                                        //modelCountingConstraint += range;
-                                        //modelCountingDomain += range;
-
-                                        //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                        //modelCounter.setBound(4);
-                                    } else if (var.getValue().equals("java.lang.String")) {
-                                        numStringVars++;
-                                        //String range = "/[ -~]{1,16}/";
-                                        //String range = "/[-0MCDXLVI]*/";
-                                        //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                        //modelCountingConstraint += range_constraint+"\n";
-                                        //modelCountingDomain += range_constraint+"\n";
-                                        countingModeStringFlag = true;
-                                        //modelCounter.setModelCountMode("abc.string");
-                                        //modelCounter.setBound(16);
-                                    }else if (var.getValue().equals("char")) {
-//                                        String v = var.getKey();
-//                                        String extra = "(assert (or " + " (= "+ v + " 45)" + "(= "+ v + " 48)" + "(= "+ v + " 77)" +
-//                                                "(= "+ v + " 67)" + "(= "+ v + " 68)" + "(= "+ v + " 88)" +
-//                                                "(= "+ v + " 76)" + "(= "+ v + " 86)" + "(= "+ v + " 73)" + "))\n";
-                                        if (!modelCountingConstraint.contains("charAt")) {
-                                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
-                                            String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 256)))\n";
-                                            modelCountingConstraint += range;
-                                            modelCountingDomain += range;
-                                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                            //modelCounter.setBound(8);
-                                        } else {
-                                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
-                                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                            String range = "(assert (in " + var.getKey() + " /[ -~]{1,1}/))";
-                                            modelCountingConstraint += range;
-                                            modelCountingDomain += range;
-                                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                            //modelCounter.setBound(8);
-                                        }
-                                    }
-                                    model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
-                                }
-
-                                if(numStringVars > 3) {
-                                    modelCountingConstraint = "";
-                                    continue;
-                                }
-
-                                if(numStringVars == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
-                                    modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
-                                }
-
-                                modelCountingDomain += rangeConsAssertion;
-                                modelCountingConstraint += rangeConsAssertion;
-                                modelCountingConstraint += "(check-sat)\n";
-                                System.out.println(modelCountingConstraint);
-                            }
-
-                            variableInConstraint.clear();
-                        }
-
-                        List<CtInvocationImpl> methodInvocationList = condExpr.getElements(new TypeFilter<CtInvocationImpl>(CtInvocationImpl.class) {
-                            @Override
-                            public boolean matches(CtInvocationImpl candidate) {
-                                return true;
-                            }
-                        });
-
-
-                        if ((condExpr instanceof CtInvocationImpl) && methodInvocationList.size() > 0) {
-
-                            featureNumberOfMethodInvocations++;
-
-                            numberOfBranchesWithmethodInvocation++;
-
-                            String assertionString = processOp(methodInvocationList.get(0));
-
-                            if (!assertionString.equals("")) {
-                                modelCountingConstraint += "(assert " + assertionString + ")\n";
-
-                                numOfVars += variableInConstraint.size();
-                                if(variableInConstraint.size() > featureMaxNumOfVarInBranches)
-                                    featureMaxNumOfVarInBranches = variableInConstraint.size();
-
-                                //System.out.println(variableInConstraint);
-                                int numStringVarToCount = 0;
-                                for (Pair<String, String> var : variableInConstraint) {
-                                    if (var.getKey().contains("\""))
-                                        continue;
-                                    //System.out.println(var.getKey() + ":" + var.getValue());
-                                    if (var.getValue().equals("int") || var.getValue().equals("long")) {
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
-                                        //String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 16)))\n";
-                                        //modelCountingConstraint += range;
-                                        //modelCountingDomain += range;
-                                        //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                        //modelCounter.setBound(4);
-                                    } else if (var.getValue().equals("java.lang.String")) {
-                                        numStringVarToCount++;
-                                        //String range = "/[ -~]{1,16}/";
-                                        //String range = "/[-0MCDXLVI]*/";
-                                        //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
-                                        //modelCountingConstraint += range_constraint + "\n";
-                                        //modelCountingDomain += range_constraint + "\n";
-                                        countingModeStringFlag = true;
-                                        //modelCounter.setModelCountMode("abc.string");
-                                        //modelCounter.setBound(16);
-                                    } else if (var.getValue().equals("char")) {
-//                                        String v = var.getKey();
-//                                        String extra = "(assert (or " + " (= "+ v + " 45)" + "(= "+ v + " 48)" + "(= "+ v + " 77)" +
-//                                                "(= "+ v + " 67)" + "(= "+ v + " 68)" + "(= "+ v + " 88)" +
-//                                                "(= "+ v + " 76)" + "(= "+ v + " 86)" + "(= "+ v + " 73)" + "))\n";
-                                        modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
-                                        modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
-                                        String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 256)))\n";
-                                        modelCountingConstraint += range;
-                                        modelCountingDomain += range;
-                                        //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
-                                        //modelCounter.setBound(8);
-                                    }
-                                    model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
-                                }
-
-                                if (numStringVarToCount > 3) {
-                                    modelCountingConstraint = "";
-                                    continue;
-                                }
-
-                                if(numStringVarToCount == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
-                                    modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
-                                }
-
-
-                                modelCountingConstraint += "(check-sat)\n";
-                                System.out.println(modelCountingConstraint);
-                            }
-
-                            variableInConstraint.clear();
-                        }
-
-
-                        double prob_true, prob_false;
-                        if(modelCountingConstraint.equals("")) {
-                            System.err.println("This branch is not considered for model counting! Fifty fifty selectivity!");
-                            featureNumOfBranchesSupportedByMC--;
-
-                            if(condExpr.toString().contains("null")) {
-                                condEnv = "N";
-                            } else if(condExpr instanceof CtInvocationImpl) {
-                                condEnv = "M";
-                            }else {
-                                condEnv = "O";
-                            }
-
-                            fileContent += sourceLocation + "\t" + "0.5" + "," + condParent + "," + condEnv + ",false\n";
-                        } else {
-                            condEnv = "O";
-                            try {
-
-                                //temporary fix for mutitrack issue
-                                if(model_counting_vars.size() == 2) {
-                                    String eqAssertion = "(assert (= " + model_counting_vars.get(0) + " " + model_counting_vars.get(1) + ")";
-                                  if(modelCountingConstraint.contains(eqAssertion)) {
-                                      MultiTrackIssueFlag = true;
-                                  }
-                                }
-
-                                if (modelCountingConstraint.contains("assert") && !modelCountingConstraint.contains("define") &&
-                                        !modelCountingConstraint.contains("declare-fun"))
-                                    continue;
-
-                                BigDecimal cons_count = modelCounter.getModelCount(modelCountingConstraint, model_counting_vars, MultiTrackIssueFlag);
-                                System.out.println("Branch model count: " + cons_count);
-
-                                modelCountingDomain += "(assert true)\n";
-                                modelCountingDomain += "(check-sat)";
-                                System.out.println(modelCountingDomain);
-                                BigDecimal dom_count = modelCounter.getModelCount(modelCountingDomain, model_counting_vars, false);
-                                System.out.println("Branch domain count:" + dom_count);
-
-                                prob_true = cons_count.doubleValue() / dom_count.doubleValue();
-                                if(prob_true == 1.0)
-                                    prob_true = 0.9999999999;
-                                if(prob_true == 0.0)
-                                    prob_true = 0.0000000001;
-                                prob_false = 1.0 - prob_true;
-
-                                System.out.println("True branch probability: " + prob_true);
-                                System.out.println("False branch probability: " + prob_false);
-
-                                numberOfBranchesConsidered++;
-                                boolean selectiveBranch = false;
-                                if (prob_true < 0.05 || prob_false < 0.05) {
-                                    //System.err.println("This branch is selective");
-                                    selectiveBranch = true;
-                                    numberOfSelectiveBranches++;
-                                    featureNumOfSelectiveBranches++;
-                                    Pair<String, String> classMethodPair = new Pair<String, String>(ctClass.getQualifiedName(), method.getSignature());
-                                    if (selectiveBranchMap.containsKey(classMethodPair)) {
-                                        selectiveBranchMap.put(classMethodPair, selectiveBranchMap.get(classMethodPair) + 1);
-                                    } else {
-                                        selectiveBranchMap.put(classMethodPair, 1);
-                                    }
-                                } else {
-                                    //System.err.println("This branch is not selective");
-                                }
-                                if(MethodInCondition) {
-                                    fileContent += sourceLocation + "\t" + prob_false + "," + condParent + "," + condEnv + "," + selectiveBranch +"\n";
-                                } else {
-                                    fileContent += sourceLocation + "\t" + prob_true + "," + condParent + "," + condEnv + "," + selectiveBranch + "\n";
-                                }
-                            } catch (Exception ex) {
-                                //System.err.println("Not appropriate constraint to count models");
-                            }
-                        }
-
-                        featureAvgNumOfVarInBranches = numOfVars/featureNumOfBranches;
-                        featureAvgNumOfNestedBranches = numOfNests/featureNumOfBranches;
+                        model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
                     }
 
-                    String featureString = currentMethodInfo + "," +
-                            featureNumOfBranches + "," +
-                            featureNumberOfIfBranches + "," +
-                            featureNumberOfLoopBranches + "," +
-                            featureNumberOfSwitchCases + "," +
-                            featureNumberOfUnaryOperations + "," +
-                            featureNumberOfBinaryOperations + "," +
-                            featureNumberOfMethodInvocations + "," +
-                            featureMaxNumOfVarInBranches + "," +
-                            featureAvgNumOfVarInBranches + "," +
-                            featureNumOfBranchesSupportedByMC + "," +
-                            featureAvgNumOfNestedBranches + "," +
-                            featureNumOfSelectiveBranches + "\n";
+                    if(numStringVars > 3) {
+                        modelCountingConstraint = "";
+                        continue;
+                    }
 
-                    bwFeature.write(featureString);
+                    if(numStringVars == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
+                        modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
+                    }
+
+                    modelCountingDomain += rangeConsAssertion;
+                    modelCountingConstraint += rangeConsAssertion;
+                    modelCountingConstraint += "(check-sat)\n";
+                    System.out.println(modelCountingConstraint);
+                }
+                variableInConstraint.clear();
+            }
+
+
+            List<CtBinaryOperatorImpl> binaryOperatorList = condExpr.getElements(new TypeFilter<CtBinaryOperatorImpl>(CtBinaryOperatorImpl.class) {
+                @Override
+                public boolean matches(CtBinaryOperatorImpl candidate) {
+                    return true;
+                }
+            });
+
+            if(unaryOperatorList.size() == 0 && binaryOperatorList.size() == 0){
+                //System.out.println("Other conditions: " + condExpr.toString());
+            }
+
+
+            if ((condExpr instanceof CtBinaryOperatorImpl) && binaryOperatorList.size() > 0) {
+
+                featureNumberOfBinaryOperations++;
+
+                numberOfBranchesWithBinOp++;
+
+                CtBinaryOperatorImpl binaryOperator = binaryOperatorList.get(0);
+
+                CtElement leftOp = binaryOperator.getLeftHandOperand();
+                CtElement rightOp = binaryOperator.getRightHandOperand();
+
+                //System.out.println(leftOp);
+                //System.out.println(rightOp);
+                String rangeConsAssertion = "";
+
+                if(abstractDomain.equals("yes")) {
+                    rangeConsAssertion = getRangeConstraint(sourceLocation, leftOp, rightOp, binaryOperator.getKind());
                 }
 
+                String assertionString = "";
+
+                if(rightOp == null)
+                    System.out.println("here i am");
+
+                if (rightOp.toString().equals("false")) {
+                    assertionString = generateAssertion(leftOp,UnaryOperatorKind.NOT);
+                }
+                else{
+                    assertionString = generateAssertion(leftOp, rightOp, binaryOperator.getKind());
+                }
+
+                if (assertionString.contains("0X") || assertionString.contains("0x"))
+                    continue;
+                if (assertionString.contains("0B"))
+                    continue;
+                if (assertionString.contains("public"))
+                    continue;
+                if (!assertionString.equals("")) {
+                    if(assertionString.contains("charAt")) {
+                        String patternToReplace = "\\(= \\(charAt ([a-zA-Z]+[0-9]*) (\\d+\\)) (\\d)(\\))";
+                        if(assertionString.matches(patternToReplace)) {
+                            String correctPattern = "\\(= \\(charAt $1 $2 \"$3\"$4";
+                            assertionString = assertionString.replaceAll(patternToReplace, correctPattern);
+                        }
+                    }
+                    modelCountingConstraint += "(assert " + assertionString + ")\n";
+
+                    numOfVars += variableInConstraint.size();
+                    if(variableInConstraint.size() > featureMaxNumOfVarInBranches)
+                        featureMaxNumOfVarInBranches = variableInConstraint.size();
+
+                    //System.out.println(variableInConstraint);
+                    int numStringVars = 0;
+                    for (Pair<String, String> var : variableInConstraint) {
+                        //System.out.println(var.getKey() + ":" + var.getValue());
+                        if (var.getValue().equals("int") || var.getValue().equals("long")) {
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+
+                            //String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 16)))\n";
+                            //modelCountingConstraint += range;
+                            //modelCountingDomain += range;
+
+                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                            //modelCounter.setBound(4);
+                        } else if (var.getValue().equals("java.lang.String")) {
+                            numStringVars++;
+                            //String range = "/[ -~]{1,16}/";
+                            //String range = "/[-0MCDXLVI]*/";
+                            //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
+                            //modelCountingConstraint += range_constraint+"\n";
+                            //modelCountingDomain += range_constraint+"\n";
+                            countingModeStringFlag = true;
+                            //modelCounter.setModelCountMode("abc.string");
+                            //modelCounter.setBound(16);
+                        }else if (var.getValue().equals("char")) {
+//                                        String v = var.getKey();
+//                                        String extra = "(assert (or " + " (= "+ v + " 45)" + "(= "+ v + " 48)" + "(= "+ v + " 77)" +
+//                                                "(= "+ v + " 67)" + "(= "+ v + " 68)" + "(= "+ v + " 88)" +
+//                                                "(= "+ v + " 76)" + "(= "+ v + " 86)" + "(= "+ v + " 73)" + "))\n";
+                            if (!modelCountingConstraint.contains("charAt")) {
+                                modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                                modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                                String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 256)))\n";
+                                modelCountingConstraint += range;
+                                modelCountingDomain += range;
+                                //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                                //modelCounter.setBound(8);
+                            } else {
+                                modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
+                                modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
+                                String range = "(assert (in " + var.getKey() + " /[ -~]{1,1}/))";
+                                modelCountingConstraint += range;
+                                modelCountingDomain += range;
+                                //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                                //modelCounter.setBound(8);
+                            }
+                        }
+                        model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
+                    }
+
+                    if(numStringVars > 3) {
+                        modelCountingConstraint = "";
+                        continue;
+                    }
+
+                    if(numStringVars == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
+                        modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
+                    }
+
+                    modelCountingDomain += rangeConsAssertion;
+                    modelCountingConstraint += rangeConsAssertion;
+                    modelCountingConstraint += "(check-sat)\n";
+                    System.out.println(modelCountingConstraint);
+                }
+
+                variableInConstraint.clear();
             }
-            //System.out.println(fileContent);
+
+            List<CtInvocationImpl> methodInvocationList = condExpr.getElements(new TypeFilter<CtInvocationImpl>(CtInvocationImpl.class) {
+                @Override
+                public boolean matches(CtInvocationImpl candidate) {
+                    return true;
+                }
+            });
+
+
+            if ((condExpr instanceof CtInvocationImpl) && methodInvocationList.size() > 0) {
+
+                featureNumberOfMethodInvocations++;
+
+                numberOfBranchesWithmethodInvocation++;
+
+                String assertionString = processOp(methodInvocationList.get(0));
+
+                if (!assertionString.equals("")) {
+                    modelCountingConstraint += "(assert " + assertionString + ")\n";
+
+                    numOfVars += variableInConstraint.size();
+                    if(variableInConstraint.size() > featureMaxNumOfVarInBranches)
+                        featureMaxNumOfVarInBranches = variableInConstraint.size();
+
+                    //System.out.println(variableInConstraint);
+                    int numStringVarToCount = 0;
+                    for (Pair<String, String> var : variableInConstraint) {
+                        if (var.getKey().contains("\""))
+                            continue;
+                        //System.out.println(var.getKey() + ":" + var.getValue());
+                        if (var.getValue().equals("int") || var.getValue().equals("long")) {
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                            //String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 16)))\n";
+                            //modelCountingConstraint += range;
+                            //modelCountingDomain += range;
+                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                            //modelCounter.setBound(4);
+                        } else if (var.getValue().equals("java.lang.String")) {
+                            numStringVarToCount++;
+                            //String range = "/[ -~]{1,16}/";
+                            //String range = "/[-0MCDXLVI]*/";
+                            //String range_constraint = "(assert (in " + var.getKey() + " " + range.trim() + "))";
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "String" + ")\n" + modelCountingDomain;
+                            //modelCountingConstraint += range_constraint + "\n";
+                            //modelCountingDomain += range_constraint + "\n";
+                            countingModeStringFlag = true;
+                            //modelCounter.setModelCountMode("abc.string");
+                            //modelCounter.setBound(16);
+                        } else if (var.getValue().equals("char")) {
+//                                        String v = var.getKey();
+//                                        String extra = "(assert (or " + " (= "+ v + " 45)" + "(= "+ v + " 48)" + "(= "+ v + " 77)" +
+//                                                "(= "+ v + " 67)" + "(= "+ v + " 68)" + "(= "+ v + " 88)" +
+//                                                "(= "+ v + " 76)" + "(= "+ v + " 86)" + "(= "+ v + " 73)" + "))\n";
+                            modelCountingConstraint = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingConstraint;
+                            modelCountingDomain = "(declare-fun " + var.getKey() + " () " + "Int" + ")\n" + modelCountingDomain;
+                            String range = "(assert (and (>= " + var.getKey() + " 0) " + "(< " + var.getKey() + " 256)))\n";
+                            modelCountingConstraint += range;
+                            modelCountingDomain += range;
+                            //modelCounter.setModelCountMode("abc.linear_integer_arithmetic");
+                            //modelCounter.setBound(8);
+                        }
+                        model_counting_vars.add(new Pair<>(var.getKey(),var.getValue()));
+                    }
+
+                    if (numStringVarToCount > 3) {
+                        modelCountingConstraint = "";
+                        continue;
+                    }
+
+                    if(numStringVarToCount == variableInConstraint.size() && modelCountingConstraint.contains("+")) {
+                        modelCountingConstraint = modelCountingConstraint.replaceAll(Pattern.quote("+"), "concat");
+                    }
+
+
+                    modelCountingConstraint += "(check-sat)\n";
+                    System.out.println(modelCountingConstraint);
+                }
+
+                variableInConstraint.clear();
+            }
+
+
+            double prob_true, prob_false;
+            if(modelCountingConstraint.equals("")) {
+                System.err.println("This branch is not considered for model counting! Fifty fifty selectivity!");
+                featureNumOfBranchesSupportedByMC--;
+
+                if(condExpr.toString().contains("null")) {
+                    condEnv = "N";
+                } else if(condExpr instanceof CtInvocationImpl) {
+                    condEnv = "M";
+                }else {
+                    condEnv = "O";
+                }
+
+                fileContent += sourceLocation + "\t" + "0.5" + "," + condParent + "," + condEnv + ",false\n";
+            } else {
+                condEnv = "O";
+                try {
+
+                    //temporary fix for mutitrack issue
+                    if(model_counting_vars.size() == 2) {
+                        String eqAssertion = "(assert (= " + model_counting_vars.get(0) + " " + model_counting_vars.get(1) + ")";
+                        if(modelCountingConstraint.contains(eqAssertion)) {
+                            MultiTrackIssueFlag = true;
+                        }
+                    }
+
+                    if (modelCountingConstraint.contains("assert") && !modelCountingConstraint.contains("define") &&
+                            !modelCountingConstraint.contains("declare-fun"))
+                        continue;
+
+                    BigDecimal cons_count = modelCounter.getModelCount(modelCountingConstraint, model_counting_vars, MultiTrackIssueFlag);
+                    System.out.println("Branch model count: " + cons_count);
+
+                    modelCountingDomain += "(assert true)\n";
+                    modelCountingDomain += "(check-sat)";
+                    System.out.println(modelCountingDomain);
+                    BigDecimal dom_count = modelCounter.getModelCount(modelCountingDomain, model_counting_vars, false);
+                    System.out.println("Branch domain count:" + dom_count);
+
+                    prob_true = cons_count.doubleValue() / dom_count.doubleValue();
+                    if(prob_true == 1.0)
+                        prob_true = 0.9999999999;
+                    if(prob_true == 0.0)
+                        prob_true = 0.0000000001;
+                    prob_false = 1.0 - prob_true;
+
+                    System.out.println("True branch probability: " + prob_true);
+                    System.out.println("False branch probability: " + prob_false);
+
+                    numberOfBranchesConsidered++;
+                    boolean selectiveBranch = false;
+                    if (prob_true < 0.05 || prob_false < 0.05) {
+                        //System.err.println("This branch is selective");
+                        selectiveBranch = true;
+                        numberOfSelectiveBranches++;
+                        featureNumOfSelectiveBranches++;
+                        Pair<String, String> classMethodPair = new Pair<String, String>(ctClassQualifiedName, methodSign);
+                        if (selectiveBranchMap.containsKey(classMethodPair)) {
+                            selectiveBranchMap.put(classMethodPair, selectiveBranchMap.get(classMethodPair) + 1);
+                        } else {
+                            selectiveBranchMap.put(classMethodPair, 1);
+                        }
+                    } else {
+                        //System.err.println("This branch is not selective");
+                    }
+                    if(MethodInCondition) {
+                        fileContent += sourceLocation + "\t" + prob_false + "," + condParent + "," + condEnv + "," + selectiveBranch +"\n";
+                    } else {
+                        fileContent += sourceLocation + "\t" + prob_true + "," + condParent + "," + condEnv + "," + selectiveBranch + "\n";
+                    }
+                } catch (Exception ex) {
+                    //System.err.println("Not appropriate constraint to count models");
+                }
+            }
+
+            featureAvgNumOfVarInBranches = numOfVars/featureNumOfBranches;
+            featureAvgNumOfNestedBranches = numOfNests/featureNumOfBranches;
+        }
+
+//                    String featureString = currentMethodInfo + "," +
+//                            featureNumOfBranches + "," +
+//                            featureNumberOfIfBranches + "," +
+//                            featureNumberOfLoopBranches + "," +
+//                            featureNumberOfSwitchCases + "," +
+//                            featureNumberOfUnaryOperations + "," +
+//                            featureNumberOfBinaryOperations + "," +
+//                            featureNumberOfMethodInvocations + "," +
+//                            featureMaxNumOfVarInBranches + "," +
+//                            featureAvgNumOfVarInBranches + "," +
+//                            featureNumOfBranchesSupportedByMC + "," +
+//                            featureAvgNumOfNestedBranches + "," +
+//                            featureNumOfSelectiveBranches + "\n";
+
+
+        methodFeatureFlagMap.put(currentMethodInfo, true);
+        String featureString = methodFeatureMap.get(currentMethodInfo) + "," +
+                featureNumOfBranches + "," +
+                featureNumOfSelectiveBranches + "\n";
+
+        try {
+            bwFeature.write(featureString);
             bw.write(fileContent);
+        } catch(IOException ex) {
+            ex.printStackTrace();
+        }
+    }
+
+    private String getChangedType(String type) {
+        String updatedType=type;
+
+        if(type.contains(".")) {
+            updatedType = "L" + type.substring(type.lastIndexOf(".")+1) + ";";
+        }
+        else {
+            updatedType = updatedType.replace("int", "I");
+            updatedType = updatedType.replace("float", "F");
+            updatedType = updatedType.replace("double", "D");
+            updatedType = updatedType.replace("long", "J");
+            updatedType = updatedType.replace("short", "S");
+            updatedType = updatedType.replace("char", "C");
+            updatedType = updatedType.replace("byte", "B");
+            updatedType = updatedType.replace("boolean", "Z");
+            updatedType = updatedType.replace("void", "V");
+        }
+
+        long count = updatedType.chars().filter(ch -> ch == '[').count();
+        //count += updatedType.chars().filter(ch -> ch == ']').count();
+        String paren = "";
+        for(int c = 0; c < count; c++) {
+            paren += "[";
+        }
+        updatedType = updatedType.replace("[]", "");
+        updatedType = paren + updatedType;
+
+        /*if (updatedType.contains("[[[[D")) {
+            updatedType = updatedType.replace("[[[[D", "[[[D");
+        } else if (updatedType.contains("[[D")) {
+            updatedType = updatedType.replace("[[D", "[D");
+        }
+
+        if (updatedType.contains("[[[[I")) {
+            updatedType = updatedType.replace("[[[[I", "[[[I");
+        } else if (updatedType.contains("[[I")) {
+            updatedType = updatedType.replace("[[I", "[I");
+        }
+
+        if (updatedType.contains("[[[[B")) {
+            updatedType = updatedType.replace("[[[[B", "[[[B");
+        } else if (updatedType.contains("[[B")) {
+            updatedType = updatedType.replace("[[B", "[B");
+        }*/
+
+        return updatedType;
+    }
+
+    private String getConstructorSignature(CtConstructor constructor) {
+        String sign = constructor.getSimpleName();
+        sign += "(";
+
+        long count = constructor.getReference().getType().toString().chars().filter(ch -> ch == '[').count();
+        //count += updatedType.chars().filter(ch -> ch == ']').count();
+        String returnParen = "";
+        for(int c = 0; c < count; c++) {
+            returnParen += "[";
+        }
+
+        List<CtParameter> methodParams = constructor.getParameters();
+
+        String params = "";
+        for(CtParameter param : methodParams) {
+            String paramType = param.getType().toString();
+            paramType = getChangedType(paramType);
+            params += paramType;
+        }
+        if((constructor.isPrivate() || constructor.isPublic() || constructor.isProtected()) && params.startsWith("[") || params.startsWith("I") || params.startsWith("D") || params.startsWith("F") || params.startsWith("B")) {
+            sign += returnParen;
+        }
+        sign += params;
+        sign += ")";
+        //sign += getChangedType(method.getReference().getType().toString());
+
+        return sign;
+    }
+
+    private String getMethodSignature(CtMethod method) {
+        String sign = method.getSimpleName();
+        sign += "(";
+
+        long count = method.getReference().getType().toString().chars().filter(ch -> ch == '[').count();
+        //count += updatedType.chars().filter(ch -> ch == ']').count();
+        String returnParen = "";
+        for(int c = 0; c < count; c++) {
+            returnParen += "[";
+        }
+
+        List<CtParameter> methodParams = method.getParameters();
+
+        String params = "";
+        for(CtParameter param : methodParams) {
+            String paramType = param.getType().toString();
+            paramType = getChangedType(paramType);
+            params += paramType;
+        }
+        if((method.isPrivate() || method.isPublic() || method.isProtected()) && params.startsWith("[") || params.startsWith("I") || params.startsWith("D") || params.startsWith("F") || params.startsWith("B")) {
+            sign += returnParen;
+        }
+        sign += params;
+        sign += ")";
+        //sign += getChangedType(method.getReference().getType().toString());
+
+        return sign;
+    }
+
+    public void runBranchSelectivityForAClass(String classFile, String abstractDomain) {
+
+        //test purpose
+        //CtClass ctClass = Launcher.parseClass("class A { void m() { System.out.println(\"yeah\");} void n() { System.out.println(\"yeah\");} }");
+        //System.out.println(ctClass.getMethods().size());
+
+        try {
+
+            if (classFile.contains("$")) {
+                classFile = classFile.substring(0, classFile.indexOf("$"));
+            }
+            System.out.println(classFile);
+
+            if(classFile.contains("StackoverflowError"))
+                return;
+
+            Launcher launcher = new Launcher();
+            launcher.addInputResource(classFile);
+            launcher.buildModel();
+
+            List<CtType<?>> ctClasslist = launcher.getFactory().Class().getAll();
+            //System.out.println("Number of classes: " + ctClasslist.size());
+
+            String currentMethodInfo = "";
+
+            for (CtType<?> ctType : ctClasslist) {
+                numberOfClasses++;
+
+                Set<CtConstructor> curConstList = new HashSet<>();
+                Set<CtMethod> curMethodList = new HashSet<>();
+
+                if (ctType instanceof CtClass) {
+                    CtClass ctClass = (CtClass) ctType;
+
+                    Set<CtType<?>> innerClassList  = ctClass.getNestedTypes();
+                    //ctClasslist.addAll(innerClassList);
+
+                    curConstList.addAll(ctClass.getConstructors());
+                    curMethodList.addAll(ctClass.getAllMethods());
+
+                    CtClass cls = null;
+                    for (CtType<?> type : innerClassList) {
+                        numberOfClasses++;
+
+                        if (ctType instanceof CtClass) {
+                            cls = (CtClass) type;
+                            System.out.println(cls.getQualifiedName());
+                            curConstList.addAll(cls.getConstructors());
+                            curMethodList.addAll(cls.getAllMethods());
+                        }
+                    }
+
+                    for (CtConstructor<?> constructor : curConstList) {
+                        numberOfMethods++;
+
+                        System.out.println(constructor.getSimpleName());
+
+                        String constSign = getConstructorSignature(constructor);
+                        System.out.println(constSign);
+
+                        // to collect only necessary method info
+                        currentMethodInfo = ctClass.getQualifiedName() + ":" + constSign;
+
+                        if(currentMethodInfo.contains("actionPerformed")) {
+                            System.out.println("Here I am!");
+                        }
+
+                        if (!methodList.contains(currentMethodInfo)) {
+                            if(cls != null) {
+                                currentMethodInfo = cls.getQualifiedName() + ":" + constSign;
+                                if (!methodList.contains(currentMethodInfo)) {
+                                    System.out.println(currentMethodInfo);
+                                    continue;
+                                }
+                            } else {
+                                System.out.println(currentMethodInfo);
+                                continue;
+                            }
+                        }
+
+
+                        CtBlock constBlock = constructor.getBody();
+                        handleMethodBlock(launcher, ctClass.getQualifiedName(), currentMethodInfo, constBlock, constructor.getSignature(), abstractDomain);
+                    }
+
+                    System.out.println(ctClass.getQualifiedName());
+
+
+                    for (CtMethod<?> method : curMethodList) {
+                        numberOfMethods++;
+                        System.out.println(method.getSimpleName());
+
+                        String methodSign = getMethodSignature(method);
+                        System.out.println(methodSign);
+
+                        // to collect only necessary method info
+                        currentMethodInfo = ctClass.getQualifiedName() + ":" + methodSign;
+
+
+                        if(currentMethodInfo.contains("actionPerformed")) {
+                            System.out.println("Here I am!");
+                        }
+
+                        if (!methodList.contains(currentMethodInfo)) {
+                            if(cls != null) {
+                                currentMethodInfo = cls.getQualifiedName() + ":" + methodSign;
+                                if (!methodList.contains(currentMethodInfo)) {
+                                    System.out.println(currentMethodInfo);
+                                    continue;
+                                }
+                            } else {
+                                System.out.println(currentMethodInfo);
+                                continue;
+                            }
+                        }
+
+
+                        CtBlock methodBlock = method.getBody();
+                        handleMethodBlock(launcher, ctClass.getQualifiedName(), currentMethodInfo, methodBlock, method.getSignature(), abstractDomain);
+                    }
+                }
+
+                else if (ctType instanceof CtInterface) {
+                    CtInterface ctInterface = (CtInterface) ctType;
+
+                    curMethodList = ctInterface.getAllMethods();
+                    for (CtMethod<?> method : curMethodList) {
+                        numberOfMethods++;
+                        System.out.println(method.getSimpleName());
+
+                        String methodSign = getMethodSignature(method);
+                        System.out.println(methodSign);
+
+                        // to collect only necessary method info
+                        currentMethodInfo = ctInterface.getQualifiedName() + ":" + methodSign;
+
+                        if(currentMethodInfo.contains("actionPerformed")) {
+                            System.out.println("Here I am!");
+                        }
+
+                        if (!methodList.contains(currentMethodInfo)) {
+                            System.out.println(currentMethodInfo);
+                            continue;
+                        }
+
+
+                        CtBlock methodBlock = method.getBody();
+                        handleMethodBlock(launcher, ctInterface.getQualifiedName(), currentMethodInfo, methodBlock, method.getSignature(), abstractDomain);
+                    }
+                }
+            }
 
         } catch(Exception ex) {
             ex.printStackTrace();
@@ -1442,8 +1786,8 @@ public class BranchSelectivity {
             for (File file : files) {
                 //System.out.println("file: " + file.getAbsolutePath());
                 String filePath = file.getAbsolutePath();
-                if (filePath.endsWith("Generator.java") || filePath.contains("Test.java"))
-                    continue;
+//                if (filePath.endsWith("Generator.java") || filePath.contains("Test.java"))
+//                    continue;
                 runBranchSelectivityForAClass(filePath, abstractDomain);
             }
             bw.close();
@@ -1480,23 +1824,6 @@ public class BranchSelectivity {
         long startTime = System.currentTimeMillis();
 
         //---------------------------------------------------------------------------
-        //Additional code for extracting code metric features from PReach
-        String codeMetricsFile = args[2];
-        File file = new File(codeMetricsFile);
-        try {
-            BufferedReader br = new BufferedReader(new FileReader(file));
-
-            String st;
-            while ((st = br.readLine()) != null) {
-                if(st.startsWith("ID,method"))
-                    continue;
-                String methodInfo = st.split(",")[1];
-                methodList.add(methodInfo);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
 
         try {
             File bfile = new File(sourceDirectory + "/branchSelectivityMetrics.txt");
@@ -1506,19 +1833,85 @@ public class BranchSelectivity {
 
             FileWriter fw = new FileWriter(bfile.getAbsoluteFile());
             bwFeature = new BufferedWriter(fw);
-            bwFeature.write("method,numOfBranches," +
-                    "numbOfIf,numOfLoop,numberOfSwitchCases" +
-                    "numOfUnaryOP,numOfBinOp,numOfMethodInvocation," +
-                    "maxNumOfVarInBranches,avgNumOfVarsInBranches," +
-                    "numOfBrancesSupportedByMC," +
-                    "avgNumberOfNestedBranches," +
-                    "numOfSelectiveBranches\n");
+//            bwFeature.write("method,numOfBranches," +
+//                    "numbOfIf,numOfLoop,numberOfSwitchCases" +
+//                    "numOfUnaryOP,numOfBinOp,numOfMethodInvocation," +
+//                    "maxNumOfVarInBranches,avgNumOfVarsInBranches," +
+//                    "numOfBrancesSupportedByMC," +
+//                    "avgNumberOfNestedBranches," +
+//                    "numOfSelectiveBranches\n");
+            //bwFeature.write("method,numOfConditionals,numOfSelectiveConditionals\n");
         } catch(IOException e) {
             e.printStackTrace();
         }
+
         //---------------------------------------------------------------------------
+        //Additional code for extracting code metric features from PReach
+        String codeMetricsFile = args[2];
+        File file = new File(codeMetricsFile);
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(file));
+
+            String st;
+            while ((st = br.readLine()) != null) {
+//                if(st.startsWith("ID,method"))
+//                    continue;
+//                String methodInfo = st.split(",")[1];
+//                methodList.add(methodInfo);
+                if(st.startsWith("Package,Class,Method")) {
+                    bwFeature.write(st + ",NOB,NOSB\n");
+                    continue;
+                }
+                String methodInfo = st.split(",")[2];
+                methodInfo = methodInfo.replace(" ",":");
+                //int idx = methodInfo.lastIndexOf("(");
+                //methodInfo = methodInfo.substring(0,idx);
+
+//                if(methodInfo.contains("$")) {
+//                    if(methodInfo.contains("ActionListener") || methodInfo.contains("ItemListener") ||
+//                            methodInfo.contains("ChangeListener") || methodInfo.contains("Comparator") ||
+//                            methodInfo.contains("PageLoader") || methodInfo.contains("JScrollPane") ||
+//                            methodInfo.contains("Runnable")) {
+//                        ;
+//                    } else {
+//                        int id1 = methodInfo.lastIndexOf("$");
+//                        String mainClass = methodInfo.substring(id1 + 1);
+//                        methodInfo = methodInfo.substring(0, id1);
+//                        int id2 = methodInfo.lastIndexOf(".");
+//                        methodInfo = methodInfo.substring(0, id2 + 1) + mainClass;
+//                    }
+//                }
+
+                methodList.add(methodInfo);
+                if(methodFeatureMap.containsKey(methodInfo)) {
+                    System.out.println(methodInfo);
+                    System.out.print("Why??");
+                }
+                methodFeatureMap.put(methodInfo,st);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+
 
         branchSelectivity.processAllJavaFiles(sourceDirectory, args[1]);
+
+        for (Map.Entry mapElement : methodFeatureMap.entrySet()) {
+            String key = (String)mapElement.getKey();
+            if(!methodFeatureFlagMap.containsKey(key)) {
+                String featureString = methodFeatureMap.get(key) + "," +
+                        "-1" + "," +
+                        "-1" + "\n";
+
+                try {
+                    bwFeature.write(featureString);
+                } catch(IOException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
 
         try {
             bwFeature.close();
