@@ -30,6 +30,7 @@ import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import spoon.*;
 import spoon.compiler.ModelBuildingException;
@@ -828,6 +829,12 @@ public class BranchSelectivity {
     }
 
     private void handleMethodBlock(Launcher launcher, String ctClassQualifiedName, String currentMethodInfo, CtBlock methodBlock, String methodSign, String abstractDomain) {
+
+        if(methodFeatureFlagMap.containsKey(currentMethodInfo)) {
+            System.out.println("Why?");
+            return;
+        }
+
         String fileContent = "";
         ModelCounter modelCounter = new ModelCounter(31, "abc.linear_integer_arithmetic");
         //all features--------------------------------------------------
@@ -1487,6 +1494,7 @@ public class BranchSelectivity {
 //                            featureNumOfSelectiveBranches + "\n";
 
 
+
         methodFeatureFlagMap.put(currentMethodInfo, true);
         String featureString = methodFeatureMap.get(currentMethodInfo) + "," +
                 featureNumOfBranches + "," +
@@ -1606,6 +1614,127 @@ public class BranchSelectivity {
         return sign;
     }
 
+    private void handleCLasses(Launcher launcher, String classFile, List<CtType<?>> ctClasslist, String abstractDomain) {
+        for (CtType<?> ctType : ctClasslist) {
+            numberOfClasses++;
+
+            Set<CtConstructor> curConstList = new HashSet<>();
+            Set<CtMethod> curMethodList = new HashSet<>();
+            String currentMethodInfo = "";
+
+            if (ctType instanceof CtClass) {
+                CtClass ctClass = (CtClass) ctType;
+
+                curConstList.addAll(ctClass.getConstructors());
+                curMethodList.addAll(ctClass.getAllMethods());
+
+                for (CtConstructor<?> constructor : curConstList) {
+                    numberOfMethods++;
+
+                    System.out.println(constructor.getSimpleName());
+
+                    String constSign = getConstructorSignature(constructor);
+                    System.out.println(constSign);
+
+                    // to collect only necessary method info
+                    currentMethodInfo = ctClass.getQualifiedName() + ":" + constSign;
+
+                    if (!methodList.contains(currentMethodInfo)) {
+                        if(currentMethodInfo.contains("$")) {
+                            String origMethodName = currentMethodInfo.split("\\$")[1].split(":")[0];
+                            currentMethodInfo = currentMethodInfo.replace("<init>", origMethodName);
+                            if (!methodList.contains(currentMethodInfo)) {
+                                System.out.println(currentMethodInfo);
+                                continue;
+                            }
+                        } else {
+                            int idx = currentMethodInfo.lastIndexOf(".");
+                            String classPart = currentMethodInfo.substring(0,idx+1);
+                            String methodPart = currentMethodInfo.substring(idx+1);
+                            String classFileName = classFile.substring(classFile.lastIndexOf("/")+1).split(".java")[0];
+                            classPart += classFileName;
+                            currentMethodInfo = classPart + "$" + methodPart;
+                            System.out.println(currentMethodInfo);
+
+                            String origMethodName = currentMethodInfo.split("\\$")[1].split(":")[0];
+                            currentMethodInfo = currentMethodInfo.replace("<init>", origMethodName);
+
+                            if (!methodList.contains(currentMethodInfo)) {
+                                System.out.println(currentMethodInfo);
+                                continue;
+                            }
+                        }
+
+                    }
+
+
+                    CtBlock constBlock = constructor.getBody();
+                    handleMethodBlock(launcher, ctClass.getQualifiedName(), currentMethodInfo, constBlock, constructor.getSignature(), abstractDomain);
+                }
+
+                System.out.println(ctClass.getQualifiedName());
+
+
+                for (CtMethod<?> method : curMethodList) {
+                    numberOfMethods++;
+                    System.out.println(method.getSimpleName());
+
+                    String methodSign = getMethodSignature(method);
+                    System.out.println(methodSign);
+
+                    // to collect only necessary method info
+                    currentMethodInfo = ctClass.getQualifiedName() + ":" + methodSign;
+
+                    if (!methodList.contains(currentMethodInfo)) {
+                        int idx = currentMethodInfo.lastIndexOf(".");
+                        String classPart = currentMethodInfo.substring(0,idx+1);
+                        String methodPart = currentMethodInfo.substring(idx+1);
+                        String classFileName = classFile.substring(classFile.lastIndexOf("/")+1).split(".java")[0];
+                        classPart += classFileName;
+                        currentMethodInfo = classPart + "$" + methodPart;
+                        System.out.println(currentMethodInfo);
+                        if (!methodList.contains(currentMethodInfo)) {
+                            continue;
+                        }
+                    }
+
+
+                    CtBlock methodBlock = method.getBody();
+                    handleMethodBlock(launcher, ctClass.getQualifiedName(), currentMethodInfo, methodBlock, method.getSignature(), abstractDomain);
+                }
+
+                Set<CtType<?>> innerClassSet  = ctClass.getNestedTypes();
+                List<CtType<?>> innerClassList = innerClassSet.stream().collect(Collectors.toList());
+                handleCLasses(launcher,classFile,innerClassList,abstractDomain);
+            }
+
+            else if (ctType instanceof CtInterface) {
+                CtInterface ctInterface = (CtInterface) ctType;
+
+                curMethodList = ctInterface.getAllMethods();
+                for (CtMethod<?> method : curMethodList) {
+                    numberOfMethods++;
+                    System.out.println(method.getSimpleName());
+
+                    String methodSign = getMethodSignature(method);
+                    System.out.println(methodSign);
+
+                    // to collect only necessary method info
+                    currentMethodInfo = ctInterface.getQualifiedName() + ":" + methodSign;
+
+                    if (!methodList.contains(currentMethodInfo)) {
+                        System.out.println(currentMethodInfo);
+                        continue;
+                    }
+
+
+                    CtBlock methodBlock = method.getBody();
+                    handleMethodBlock(launcher, ctInterface.getQualifiedName(), currentMethodInfo, methodBlock, method.getSignature(), abstractDomain);
+                }
+            }
+        }
+    }
+
     public void runBranchSelectivityForAClass(String classFile, String abstractDomain) {
 
         //test purpose
@@ -1629,134 +1758,7 @@ public class BranchSelectivity {
             List<CtType<?>> ctClasslist = launcher.getFactory().Class().getAll();
             //System.out.println("Number of classes: " + ctClasslist.size());
 
-            String currentMethodInfo = "";
-
-            for (CtType<?> ctType : ctClasslist) {
-                numberOfClasses++;
-
-                Set<CtConstructor> curConstList = new HashSet<>();
-                Set<CtMethod> curMethodList = new HashSet<>();
-
-                if (ctType instanceof CtClass) {
-                    CtClass ctClass = (CtClass) ctType;
-
-                    Set<CtType<?>> innerClassList  = ctClass.getNestedTypes();
-                    //ctClasslist.addAll(innerClassList);
-
-                    curConstList.addAll(ctClass.getConstructors());
-                    curMethodList.addAll(ctClass.getAllMethods());
-
-                    CtClass cls = null;
-                    for (CtType<?> type : innerClassList) {
-                        numberOfClasses++;
-
-                        if (ctType instanceof CtClass) {
-                            cls = (CtClass) type;
-                            System.out.println(cls.getQualifiedName());
-                            curConstList.addAll(cls.getConstructors());
-                            curMethodList.addAll(cls.getAllMethods());
-                        }
-                    }
-
-                    for (CtConstructor<?> constructor : curConstList) {
-                        numberOfMethods++;
-
-                        System.out.println(constructor.getSimpleName());
-
-                        String constSign = getConstructorSignature(constructor);
-                        System.out.println(constSign);
-
-                        // to collect only necessary method info
-                        currentMethodInfo = ctClass.getQualifiedName() + ":" + constSign;
-
-                        if(currentMethodInfo.contains("actionPerformed")) {
-                            System.out.println("Here I am!");
-                        }
-
-                        if (!methodList.contains(currentMethodInfo)) {
-                            if(cls != null) {
-                                currentMethodInfo = cls.getQualifiedName() + ":" + constSign;
-                                if (!methodList.contains(currentMethodInfo)) {
-                                    System.out.println(currentMethodInfo);
-                                    continue;
-                                }
-                            } else {
-                                System.out.println(currentMethodInfo);
-                                continue;
-                            }
-                        }
-
-
-                        CtBlock constBlock = constructor.getBody();
-                        handleMethodBlock(launcher, ctClass.getQualifiedName(), currentMethodInfo, constBlock, constructor.getSignature(), abstractDomain);
-                    }
-
-                    System.out.println(ctClass.getQualifiedName());
-
-
-                    for (CtMethod<?> method : curMethodList) {
-                        numberOfMethods++;
-                        System.out.println(method.getSimpleName());
-
-                        String methodSign = getMethodSignature(method);
-                        System.out.println(methodSign);
-
-                        // to collect only necessary method info
-                        currentMethodInfo = ctClass.getQualifiedName() + ":" + methodSign;
-
-
-                        if(currentMethodInfo.contains("actionPerformed")) {
-                            System.out.println("Here I am!");
-                        }
-
-                        if (!methodList.contains(currentMethodInfo)) {
-                            if(cls != null) {
-                                currentMethodInfo = cls.getQualifiedName() + ":" + methodSign;
-                                if (!methodList.contains(currentMethodInfo)) {
-                                    System.out.println(currentMethodInfo);
-                                    continue;
-                                }
-                            } else {
-                                System.out.println(currentMethodInfo);
-                                continue;
-                            }
-                        }
-
-
-                        CtBlock methodBlock = method.getBody();
-                        handleMethodBlock(launcher, ctClass.getQualifiedName(), currentMethodInfo, methodBlock, method.getSignature(), abstractDomain);
-                    }
-                }
-
-                else if (ctType instanceof CtInterface) {
-                    CtInterface ctInterface = (CtInterface) ctType;
-
-                    curMethodList = ctInterface.getAllMethods();
-                    for (CtMethod<?> method : curMethodList) {
-                        numberOfMethods++;
-                        System.out.println(method.getSimpleName());
-
-                        String methodSign = getMethodSignature(method);
-                        System.out.println(methodSign);
-
-                        // to collect only necessary method info
-                        currentMethodInfo = ctInterface.getQualifiedName() + ":" + methodSign;
-
-                        if(currentMethodInfo.contains("actionPerformed")) {
-                            System.out.println("Here I am!");
-                        }
-
-                        if (!methodList.contains(currentMethodInfo)) {
-                            System.out.println(currentMethodInfo);
-                            continue;
-                        }
-
-
-                        CtBlock methodBlock = method.getBody();
-                        handleMethodBlock(launcher, ctInterface.getQualifiedName(), currentMethodInfo, methodBlock, method.getSignature(), abstractDomain);
-                    }
-                }
-            }
+            handleCLasses(launcher, classFile, ctClasslist,abstractDomain);
 
         } catch(Exception ex) {
             ex.printStackTrace();
@@ -1871,9 +1873,13 @@ public class BranchSelectivity {
 //                    if(methodInfo.contains("ActionListener") || methodInfo.contains("ItemListener") ||
 //                            methodInfo.contains("ChangeListener") || methodInfo.contains("Comparator") ||
 //                            methodInfo.contains("PageLoader") || methodInfo.contains("JScrollPane") ||
-//                            methodInfo.contains("Runnable")) {
-//                        ;
-//                    } else {
+//                            methodInfo.contains("Runnable") || methodInfo.contains("ArrayDataSource") ||
+//                            methodInfo.contains("JButton")) {
+//                        String part[] = methodInfo.split(":");
+//                        methodInfo = part[0].split("\\$")[0] + ":" + part[1];
+//                        System.out.println("hi!");
+//                    }
+//                    else {
 //                        int id1 = methodInfo.lastIndexOf("$");
 //                        String mainClass = methodInfo.substring(id1 + 1);
 //                        methodInfo = methodInfo.substring(0, id1);
@@ -1888,6 +1894,12 @@ public class BranchSelectivity {
                     System.out.print("Why??");
                 }
                 methodFeatureMap.put(methodInfo,st);
+
+                //Classes that are not an inner class but in the same java file
+//                String part[] = methodInfo.split(":");
+//                methodInfo = part[0].split("\\$")[0] + ":" + part[1];
+//                methodList.add(methodInfo);
+//                methodFeatureMap.put(methodInfo,st);
             }
         } catch (IOException e) {
             e.printStackTrace();
