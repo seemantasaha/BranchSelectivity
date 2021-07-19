@@ -298,11 +298,11 @@ public class BranchSelectivity {
                     String param = processOp(paramElem);
                     if (invocationImpl.getTarget() instanceof CtInvocationImpl) {
                         CtInvocationImpl impl = (CtInvocationImpl) invocationImpl.getTarget();
-                        string = "(startsWith " + impl.getExecutable().getSimpleName() + "Var" + " " + param + ")";
-                        variableInConstraint.add(new Pair<String, String>(impl.getExecutable().getSimpleName() + "Var", invocationImpl.getExecutable().getDeclaringType().toString()));
+                        string = "(startsWith " + reshapeString(impl.getExecutable().getSimpleName()) + "Var" + " " + param + ")";
+                        variableInConstraint.add(new Pair<String, String>(reshapeString(impl.getExecutable().getSimpleName()) + "Var", invocationImpl.getExecutable().getDeclaringType().toString()));
                     } else {
-                        string = "(startsWith " + invocationImpl.getTarget().toString() + "Var" + " " + param + ")";
-                        variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString() + "Var", invocationImpl.getExecutable().getDeclaringType().toString()));
+                        string = "(startsWith " + reshapeString(invocationImpl.getTarget().toString()) + "Var" + " " + param + ")";
+                        variableInConstraint.add(new Pair<String, String>(reshapeString(invocationImpl.getTarget().toString()) + "Var", invocationImpl.getExecutable().getDeclaringType().toString()));
                     }
                 }
                 //variableInConstraint.add(new Pair<String, String>(invocationImpl.getTarget().toString(), invocationImpl.getExecutable().getDeclaringType().toString()));
@@ -856,6 +856,7 @@ public class BranchSelectivity {
         int featureMaxNumOfVarInBranches = 0;
         int featureAvgNumOfVarInBranches = 0;
         int featureAvgNumOfNestedBranches = 0;
+        int featureMaxNumOfNestedBranches = 0;
         int featureNumOfBranchesSupportedByMC = 0;
         int featureNumberOfIfBranches = 0;
         int featureNumberOfLoopBranches = 0;
@@ -969,6 +970,9 @@ public class BranchSelectivity {
                 numberOfNests++;
             }
             numOfNests += numberOfNests;
+
+            if(numberOfNests > featureMaxNumOfNestedBranches)
+                featureMaxNumOfNestedBranches = numberOfNests;
 
 
 
@@ -1501,7 +1505,12 @@ public class BranchSelectivity {
         methodFeatureFlagMap.put(currentMethodInfo, true);
         String featureString = methodFeatureMap.get(currentMethodInfo) + "," +
                 featureNumOfBranches + "," +
-                featureNumOfSelectiveBranches + "\n";
+                featureNumOfSelectiveBranches + "," +
+                featureNumberOfMethodInvocations + "," +
+                (featureNumOfBranches - featureNumOfBranchesSupportedByMC) + "," +
+                featureMaxNumOfVarInBranches + "," +
+                featureMaxNumOfNestedBranches +
+                "\n";
 
         try {
             bwFeature.write(featureString);
@@ -1831,7 +1840,7 @@ public class BranchSelectivity {
         //---------------------------------------------------------------------------
 
         try {
-            File bfile = new File(sourceDirectory + "/branchSelectivityMetrics.txt");
+            File bfile = new File(sourceDirectory + "/branch_selectivity_feature.csv");
             if (!bfile.exists()) {
                 bfile.createNewFile();
             }
@@ -1863,8 +1872,8 @@ public class BranchSelectivity {
 //                    continue;
 //                String methodInfo = st.split(",")[1];
 //                methodList.add(methodInfo);
-                if(st.startsWith("Package,Class,Method")) {
-                    bwFeature.write(st + ",NOB,NOSB\n");
+                if(st.contains("DEFECTIVE")) {
+                    bwFeature.write(st + ",NOB,NOSB,NOBMI,NOBNMC,MNVB,MNNB\n");
                     continue;
                 }
                 String methodInfo = st.split(",")[2];
@@ -1917,6 +1926,10 @@ public class BranchSelectivity {
             String key = (String)mapElement.getKey();
             if(!methodFeatureFlagMap.containsKey(key)) {
                 String featureString = methodFeatureMap.get(key) + "," +
+                        "-1" + "," +
+                        "-1" + "," +
+                        "-1" + "," +
+                        "-1" + "," +
                         "-1" + "," +
                         "-1" + "\n";
 
