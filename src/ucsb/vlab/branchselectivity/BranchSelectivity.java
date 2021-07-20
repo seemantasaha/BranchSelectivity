@@ -905,6 +905,47 @@ public class BranchSelectivity {
 
         List<CtExpression> allConditionalExpression = new ArrayList<CtExpression>();
 
+        List<CtReturn> returnList = methodBlock.getElements(new TypeFilter<CtReturn>(CtReturn.class){
+            @Override
+            public boolean matches(CtReturn element) {
+                return true;
+            }
+        });
+
+        for (CtReturn ret : returnList) {
+            if(ret.getReturnedExpression() instanceof CtInvocationImpl) {
+                CtInvocationImpl invoc = (CtInvocationImpl) ret.getReturnedExpression();
+                if(invoc.getExecutable().getType() != null && invoc.getExecutable().getType().toString().equals("boolean")) {
+//                    numberOfBranches++;
+//                    if(ret.getReturnedExpression().toString().contains("contain") || ret.getReturnedExpression().toString().contains("exist")) {
+//                        numberOfSelectiveBranches++;
+//                    }
+                    allConditionalExpression.add(ret.getReturnedExpression());
+                }
+            }
+            else if(ret.getReturnedExpression() instanceof CtUnaryOperatorImpl) {
+                CtUnaryOperatorImpl unOp = (CtUnaryOperatorImpl) ret.getReturnedExpression();
+                if(unOp.getOperand() instanceof CtInvocationImpl) {
+                    CtInvocationImpl unInvoc = (CtInvocationImpl) unOp.getOperand();
+                    if(unInvoc.getExecutable().getType() != null && unInvoc.getExecutable().getType().toString().equals("boolean")) {
+//                        numberOfBranches++;
+//                        if(ret.getReturnedExpression().toString().contains("contain") || ret.getReturnedExpression().toString().contains("exist")) {
+//                            numberOfSelectiveBranches++;
+//                        }
+                        allConditionalExpression.add(unOp.getOperand());
+                    }
+                }
+            }
+            else if(ret.getReturnedExpression() instanceof CtBinaryOperatorImpl) {
+                CtBinaryOperatorImpl binOp = (CtBinaryOperatorImpl) ret.getReturnedExpression();
+                if(binOp.getType() != null && binOp.getType().toString().equals("boolean")) {
+                    allConditionalExpression.add(ret.getReturnedExpression());
+                }
+            }
+        }
+
+
+
         for (CtIf cond : branchList) {
             allConditionalExpression.add(cond.getCondition());
             featureNumberOfIfBranches++;
@@ -1415,6 +1456,9 @@ public class BranchSelectivity {
                 if(condExpr.toString().contains("null")) {
                     condEnv = "N";
                 } else if(condExpr instanceof CtInvocationImpl) {
+                    if(condExpr.toString().contains("contains") || condExpr.toString().contains("exists")) {
+                        numberOfSelectiveBranches++;
+                    }
                     condEnv = "M";
                 }else {
                     condEnv = "O";
