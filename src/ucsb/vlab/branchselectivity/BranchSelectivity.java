@@ -1407,7 +1407,7 @@ public class BranchSelectivity {
                             featureAvgNumOfNestedBranches + "," +
                             featureNumOfSelectiveBranches + "\n";
 
-                    bwFeature.write(featureString);
+                    //bwFeature.write(featureString);
                 }
 
             }
@@ -1481,50 +1481,50 @@ public class BranchSelectivity {
 
         //---------------------------------------------------------------------------
         //Additional code for extracting code metric features from PReach
-        String codeMetricsFile = args[2];
-        File file = new File(codeMetricsFile);
-        try {
-            BufferedReader br = new BufferedReader(new FileReader(file));
-
-            String st;
-            while ((st = br.readLine()) != null) {
-                if(st.startsWith("ID,method"))
-                    continue;
-                String methodInfo = st.split(",")[1];
-                methodList.add(methodInfo);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-
-        try {
-            File bfile = new File(sourceDirectory + "/branchSelectivityMetrics.txt");
-            if (!bfile.exists()) {
-                bfile.createNewFile();
-            }
-
-            FileWriter fw = new FileWriter(bfile.getAbsoluteFile());
-            bwFeature = new BufferedWriter(fw);
-            bwFeature.write("method,numOfBranches," +
-                    "numbOfIf,numOfLoop,numberOfSwitchCases" +
-                    "numOfUnaryOP,numOfBinOp,numOfMethodInvocation," +
-                    "maxNumOfVarInBranches,avgNumOfVarsInBranches," +
-                    "numOfBrancesSupportedByMC," +
-                    "avgNumberOfNestedBranches," +
-                    "numOfSelectiveBranches\n");
-        } catch(IOException e) {
-            e.printStackTrace();
-        }
+//        String codeMetricsFile = args[2];
+//        File file = new File(codeMetricsFile);
+//        try {
+//            BufferedReader br = new BufferedReader(new FileReader(file));
+//
+//            String st;
+//            while ((st = br.readLine()) != null) {
+//                if(st.startsWith("ID,method"))
+//                    continue;
+//                String methodInfo = st.split(",")[1];
+//                methodList.add(methodInfo);
+//            }
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+//
+//
+//        try {
+//            File bfile = new File(sourceDirectory + "/branchSelectivityMetrics.txt");
+//            if (!bfile.exists()) {
+//                bfile.createNewFile();
+//            }
+//
+//            FileWriter fw = new FileWriter(bfile.getAbsoluteFile());
+//            bwFeature = new BufferedWriter(fw);
+//            bwFeature.write("method,numOfBranches," +
+//                    "numbOfIf,numOfLoop,numberOfSwitchCases" +
+//                    "numOfUnaryOP,numOfBinOp,numOfMethodInvocation," +
+//                    "maxNumOfVarInBranches,avgNumOfVarsInBranches," +
+//                    "numOfBrancesSupportedByMC," +
+//                    "avgNumberOfNestedBranches," +
+//                    "numOfSelectiveBranches\n");
+//        } catch(IOException e) {
+//            e.printStackTrace();
+//        }
         //---------------------------------------------------------------------------
 
         branchSelectivity.processAllJavaFiles(sourceDirectory, args[1]);
 
-        try {
-            bwFeature.close();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+//        try {
+//            bwFeature.close();
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
 
         long endTime = System.currentTimeMillis();
         int processTime = (int) ((endTime-startTime) * 0.001);
